@@ -12,7 +12,7 @@ services:
     volumes:
       - caddy-data:/data
       - caddy-config:/config
-      # Ścieżka do Caddyfile w Twojej strukturze
+
       - ./infra/Caddyfile:/etc/caddy/Caddyfile
     environment:
       - DOMAIN=${DOMAIN}
@@ -23,7 +23,7 @@ services:
 
   api:
     build:
-      # Buduje z katalogu Projekt/api, gdzie powinien być Dockerfile
+
       context: ./api
       dockerfile: Dockerfile
     container_name: mobilelens_api
@@ -31,7 +31,7 @@ services:
     env_file:
       - .env
     volumes:
-      # Montowanie wolumenu dla pliku bazy SQLite
+
       - sqlite-data:/app/data
     networks:
       - mobilelens-net
@@ -56,7 +56,6 @@ services:
       - minio
     networks:
       - mobilelens-net
-    # Opcjonalnie: podmontowuje Twój katalog infra/minio-init, jeśli chcesz tam trzymać własne skrypty
     volumes:
       - ./infra/minio-init:/scripts
     entrypoint: >
