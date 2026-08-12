@@ -1,10 +1,8 @@
 # docker-compose.yml umieszczony w: infra/docker-compose.yml
-# Uruchamiasz z katalogu infra/: docker compose up -d
-# Albo z roota projektu:          docker compose -f infra/docker-compose.yml up -d
 
 services:
 
-  # ── Caddy: jedyny punkt wejścia z zewnątrz ──────────────────────────────────
+
   caddy:
     image: caddy:2
     restart: unless-stopped
@@ -12,42 +10,40 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro   # infra/Caddyfile → kontener (read-only)
-      - caddy-data:/data                        # certyfikaty TLS Let's Encrypt
-      - caddy-config:/config                    # wewnętrzny cache Caddy
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
     networks:
       - internal
 
-  # ── API: Hono + TypeScript ───────────────────────────────────────────────────
+
   api:
     build:
-      context: ../api          # katalog api/ względem infra/docker-compose.yml
-      dockerfile: Dockerfile   # api/Dockerfile
+      context: ../api
+      dockerfile: Dockerfile
     restart: unless-stopped
-    # Brak `ports` — api NIE jest dostępne z zewnątrz, tylko przez Caddy
     env_file:
-      - ../.env                      # .env w korzeniu projektu
+      - ../.env
     environment:
       - NODE_ENV=production
       - DATABASE_PATH=/app/data/db.sqlite
-      - MINIO_ENDPOINT=minio         # nazwa usługi = hostname w sieci Dockera
+      - MINIO_ENDPOINT=minio
       - MINIO_PORT=9000
     volumes:
-      - sqlite-data:/app/data        # plik db.sqlite poza kontenerem
+      - sqlite-data:/app/data
     networks:
       - internal
     depends_on:
       minio:
-        condition: service_healthy   # api startuje dopiero gdy MinIO jest gotowe
+        condition: service_healthy
 
-  # ── MinIO: S3-kompatybilny storage ──────────────────────────────────────────
+
   minio:
     image: minio/minio:latest
     restart: unless-stopped
     command: server /data --console-address ":9001"
-    # Brak `ports` — niedostępne z zewnątrz
     env_file:
-      - ../.env                      # MINIO_ROOT_USER, MINIO_ROOT_PASSWORD
+      - ../.env
     volumes:
       - minio-data:/data
     networks:
@@ -58,10 +54,10 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── minio-init: jednorazowe tworzenie bucketów ───────────────────────────────
+
   minio-init:
     image: minio/mc:latest
-    restart: no                      # uruchamia się raz i kończy
+    restart: no
     env_file:
       - ../.env
     entrypoint: >
@@ -69,8 +65,6 @@ services:
         mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
         mc mb --ignore-existing local/photos;
         mc mb --ignore-existing local/videos;
-        mc mb --ignore-existing local/review-media;
-        mc mb --ignore-existing local/brand-assets;
         exit 0;
       "
     networks:
@@ -79,15 +73,13 @@ services:
       minio:
         condition: service_healthy
 
-# ── Wolumeny ────────────────────────────────────────────────────────────────────
-volumes:
-  sqlite-data:    # plik db.sqlite — dane aplikacji i auth (better-auth)
-  minio-data:     # pliki binarne: zdjęcia, wideo, obrazy telefonów
-  caddy-data:     # certyfikaty TLS — utrata = konieczność ponownego pobrania
-  caddy-config:   # wewnętrzny cache Caddy
 
-# ── Sieci ───────────────────────────────────────────────────────────────────────
+volumes:
+  sqlite-data:
+  minio-data:
+  caddy-data:
+  caddy-config:
+
 networks:
   internal:
     driver: bridge
-    # Sieć izolowana — kontenery widzą się nawzajem, ale nie są widoczne z zewnątrz
