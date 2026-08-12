@@ -1,0 +1,81 @@
+version: "3.9"
+
+services:
+  caddy:
+    image: caddy:2
+    container_name: mobilelens_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+      # Ścieżka do Caddyfile w Twojej strukturze
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile
+    environment:
+      - DOMAIN=${DOMAIN}
+    depends_on:
+      - api
+    networks:
+      - mobilelens-net
+
+  api:
+    build:
+      # Buduje z katalogu Projekt/api, gdzie powinien być Dockerfile
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: mobilelens_api
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Montowanie wolumenu dla pliku bazy SQLite
+      - sqlite-data:/app/data
+    networks:
+      - mobilelens-net
+
+  minio:
+    image: minio/minio
+    container_name: mobilelens_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data
+    networks:
+      - mobilelens-net
+
+  minio-init:
+    image: minio/mc
+    container_name: mobilelens_minio_init
+    depends_on:
+      - minio
+    networks:
+      - mobilelens-net
+    # Opcjonalnie: podmontowuje Twój katalog infra/minio-init, jeśli chcesz tam trzymać własne skrypty
+    volumes:
+      - ./infra/minio-init:/scripts
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
+      mc mb myminio/photos --ignore-existing;
+      mc mb myminio/videos --ignore-existing;
+      mc mb myminio/review-media --ignore-existing;
+      mc mb myminio/phone-images --ignore-existing;
+      exit 0;
+      "
+
+networks:
+  mobilelens-net:
+    driver: bridge
+
+volumes:
+  sqlite-data:
+  minio-data:
+  caddy-data:
+  caddy-config:
