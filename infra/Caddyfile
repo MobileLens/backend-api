@@ -1,0 +1,5 @@
+# infra/Caddyfile
+
+api.twojadomena.pl {
+    reverse_proxy api:3000
+}
