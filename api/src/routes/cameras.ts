@@ -3,14 +3,10 @@ import { db } from "../db/index.js";
 import { camera, cameraVideoMode } from "../db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
+import type { HonoVariables } from "../types/honoTypes.js";
 import { randomUUID } from "node:crypto";
-import { auth } from "../lib/auth.js";
 
-const camerasRouter = new Hono();
-
-function getUser(c: { req: { raw: { headers: Headers } } }) {
-  return auth.api.getSession({ headers: c.req.raw.headers });
-}
+const camerasRouter = new Hono<{ Variables: HonoVariables }>();
 
 // GET /cameras?smartphone_id= — public, approved only
 camerasRouter.get("/", async (c) => {
@@ -28,7 +24,8 @@ camerasRouter.get("/", async (c) => {
   return c.json(withModes);
 });
 
-// GET /cameras/pending — must come before /:id
+// GET /cameras/pending — moderator+. (Ten router nie ma GET /:id, więc nie ma
+// tu ryzyka kolizji kolejności tras — mimo starego komentarza sugerującego inaczej.)
 camerasRouter.get("/pending", requireRole("moderator"), async (c) => {
   const rows = await db.select().from(camera).where(eq(camera.status, "pending"));
   return c.json(rows);
@@ -36,8 +33,7 @@ camerasRouter.get("/pending", requireRole("moderator"), async (c) => {
 
 // POST /cameras
 camerasRouter.post("/", requireAuth, async (c) => {
-  const session = await getUser(c);
-  if (!session) return c.json({ error: "Unauthorized" }, 401);
+  const user = c.get("user"); // wcześniej: druga, zbędna auth.api.getSession(...)
 
   const body = await c.req.json<{
     smartphoneId: string;
@@ -61,7 +57,7 @@ camerasRouter.post("/", requireAuth, async (c) => {
   const newCamera = {
     id:                 randomUUID(),
     smartphoneId:       body.smartphoneId,
-    submitterId:        session.user.id,
+    submitterId:        user.id,
     reviewedBy:         null as string | null,
     status:             "pending" as const,
     submittedAt:        new Date(),
@@ -98,10 +94,13 @@ camerasRouter.post("/", requireAuth, async (c) => {
 
 // PATCH /cameras/:id/review
 camerasRouter.patch("/:id/review", requireRole("moderator"), async (c) => {
-  const session = await getUser(c);
-  if (!session) return c.json({ error: "Unauthorized" }, 401);
+  const user = c.get("user");
 
   const id = c.req.param("id") as string;
+
+  const existing = await db.select({ id: camera.id }).from(camera).where(eq(camera.id, id));
+  if (!existing[0]) return c.json({ error: "Not found" }, 404);
+
   const body = await c.req.json<{
     status: "approved" | "rejected";
     focalLengthMm?: number;
@@ -120,7 +119,7 @@ camerasRouter.patch("/:id/review", requireRole("moderator"), async (c) => {
 
   const updates: Partial<typeof camera.$inferInsert> = {
     status:     body.status,
-    reviewedBy: session.user.id,
+    reviewedBy: user.id,
     reviewedAt: new Date(),
   };
 

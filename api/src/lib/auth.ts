@@ -4,6 +4,18 @@ import { bearer, jwt } from "better-auth/plugins";
 import { db } from "../db/index.js";
 import * as schema from "../db/schema.js";
 
+const isProd = process.env["NODE_ENV"] === "production";
+const secretFromEnv = process.env["BETTER_AUTH_SECRET"];
+
+
+if (isProd) {
+  if (!secretFromEnv) {
+    throw new Error(
+      "BETTER_AUTH_SECRET nie jest ustawiony"
+    );
+  }
+  }
+
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: "sqlite",
@@ -21,7 +33,7 @@ export const auth = betterAuth({
     requireEmailVerification: false,
   },
 
-  secret: process.env["BETTER_AUTH_SECRET"] ?? "change-me-in-production",
+  secret: secretFromEnv ?? "dev-only-insecure-secret",
   baseURL: process.env["API_BASE_URL"] ?? "http://localhost:3000",
 
   plugins: [
@@ -33,7 +45,7 @@ export const auth = betterAuth({
     }),
   ],
 
-  // Expose custom user fields
+
   user: {
     additionalFields: {
       username: { type: "string", required: false, unique: true },

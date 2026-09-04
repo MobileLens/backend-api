@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "outDir": "./dist",
+    "rootDir": "./src",
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "target": "es2022",
@@ -12,5 +13,5 @@
     "noUncheckedIndexedAccess": true,
     "moduleDetection": "force"
   },
-  "include": ["src/**/*", "drizzle.config.ts"]
+  "include": ["src/**/*"]
 }

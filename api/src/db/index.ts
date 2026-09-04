@@ -6,7 +6,6 @@ const DB_PATH = process.env["DATABASE_PATH"] ?? "./data/db.sqlite";
 
 const sqlite = new Database(DB_PATH);
 
-// Enable WAL mode — non-blocking reads
 sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("foreign_keys = ON");
 

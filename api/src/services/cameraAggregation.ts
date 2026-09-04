@@ -1,14 +1,14 @@
 /**
  * Camera aggregation pipeline (plan section 4).
  *
- * Runs periodically (setInterval) on the pending camera rows.
+ * Runs periodically on the pending camera rows.
  * Groups by (smartphone_id, type, facing), computes median/mode,
  * promotes one row to approved and rejects duplicates.
  */
 
 import { db } from "../db/index.js";
 import { camera } from "../db/schema.js";
-import { eq, and, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 // Minimum submissions before auto-approval
 const MIN_SUBMISSIONS = 3;
@@ -89,63 +89,68 @@ async function aggregateGroup(rows: CameraRow[]) {
     return;
   }
 
-  // Step 1: remove outliers
   const outlierIds = findOutliers(rows);
   const cleanRows = rows.filter(r => !outlierIds.has(r.id));
 
-  // Reject outlier rows automatically
-  for (const id of outlierIds) {
-    await db.update(camera)
-      .set({ status: "rejected", reviewedAt: new Date(), reviewedBy: null })
-      .where(eq(camera.id, id));
-  }
+  // Cała grupa jest teraz aktualizowana w jednej transakcji. Wcześniej
+  // odrzucenie outlierów i promocja zwycięzcy były osobnymi zapytaniami —
+  // awaria w środku (np. crash procesu) potrafiła zostawić grupę w
+  // niespójnym stanie (część już odrzucona, reszta nietknięta).
+  await db.transaction(async (tx) => {
+    // Reject outlier rows automatically
+    for (const id of outlierIds) {
+      await tx.update(camera)
+        .set({ status: "rejected", reviewedAt: new Date(), reviewedBy: null })
+        .where(eq(camera.id, id));
+    }
 
-  if (cleanRows.length < MIN_SUBMISSIONS) {
-    // After outlier removal, too few remain — leave rest pending
-    return;
-  }
+    if (cleanRows.length < MIN_SUBMISSIONS) {
+      // After outlier removal, too few remain — leave rest pending
+      return;
+    }
 
-  // Step 2: check agreement on clean rows
-  const agreement = agreementScore(cleanRows);
-  if (agreement < MIN_AGREEMENT) {
-    // Low consensus — leave for manual moderation
-    return;
-  }
+    const agreement = agreementScore(cleanRows);
+    if (agreement < MIN_AGREEMENT) {
+      // Low consensus — leave for manual moderation
+      return;
+    }
 
-  // Step 3: compute consensus values
-  const consensusNumeric: Partial<Record<NumericKey, number>> = {};
-  for (const key of NUMERIC_KEYS) {
-    const values = cleanRows.map(r => r[key] as number);
-    consensusNumeric[key] = Math.round(median(values) * 100) / 100;
-  }
+    const consensusNumeric: Partial<Record<NumericKey, number>> = {};
+    for (const key of NUMERIC_KEYS) {
+      const values = cleanRows.map(r => r[key] as number);
+      consensusNumeric[key] = Math.round(median(values) * 100) / 100;
+    }
 
-  const consensusDiscrete: { afZones: number; ois: CameraRow["ois"] } = {
-    afZones: mode(cleanRows.map(r => r.afZones)),
-    ois:     mode(cleanRows.map(r => r.ois)),
-  };
+    const consensusDiscrete: { afZones: number; ois: CameraRow["ois"] } = {
+      afZones: mode(cleanRows.map(r => r.afZones)),
+      ois:     mode(cleanRows.map(r => r.ois)),
+    };
 
-  // Step 4: promote first (oldest) row to approved with consensus values
-  const winner = cleanRows.sort(
-    (a, b) => a.submittedAt.getTime() - b.submittedAt.getTime()
-  )[0]!;
+    // Promote first (oldest) row to approved with consensus values.
+    // Sortujemy kopię, żeby nie modyfikować w miejscu tablicy wejściowej.
+    const sorted = [...cleanRows].sort(
+      (a, b) => a.submittedAt.getTime() - b.submittedAt.getTime()
+    );
+    const winner = sorted[0]!;
 
-  await db.update(camera)
-    .set({
-      status:     "approved",
-      reviewedAt: new Date(),
-      reviewedBy: null,
-      ...consensusNumeric,
-      ...consensusDiscrete,
-    })
-    .where(eq(camera.id, winner.id));
+    await tx.update(camera)
+      .set({
+        status:     "approved",
+        reviewedAt: new Date(),
+        reviewedBy: null,
+        ...consensusNumeric,
+        ...consensusDiscrete,
+      })
+      .where(eq(camera.id, winner.id));
 
-  // Step 5: reject the rest of the clean group as duplicate
-  const losers = cleanRows.filter(r => r.id !== winner.id);
-  for (const row of losers) {
-    await db.update(camera)
-      .set({ status: "rejected", reviewedAt: new Date(), reviewedBy: null })
-      .where(eq(camera.id, row.id));
-  }
+    // Reject the rest of the clean group as duplicate
+    const losers = sorted.filter(r => r.id !== winner.id);
+    for (const row of losers) {
+      await tx.update(camera)
+        .set({ status: "rejected", reviewedAt: new Date(), reviewedBy: null })
+        .where(eq(camera.id, row.id));
+    }
+  });
 }
 
 export async function runAggregationPipeline() {
@@ -176,9 +181,35 @@ export async function runAggregationPipeline() {
   console.log(`[aggregation] processed ${groups.size} groups from ${pendingRows.length} pending rows`);
 }
 
-/** Start periodic aggregation — runs every 10 minutes */
+/**
+ * Uruchamia pipeline cyklicznie. Wcześniej używał setInterval, co przy
+ * wolniejszym przebiegu (np. więcej danych w przyszłości) mogło odpalić
+ * kolejny przebieg zanim poprzedni się skończył — dwa przebiegi mogłyby
+ * złapać te same wiersze pending. Teraz kolejne uruchomienie jest
+ * planowane dopiero PO zakończeniu poprzedniego (rekurencyjny setTimeout),
+ * więc przebiegi nigdy się nie nakładają.
+ */
 export function startAggregationScheduler(intervalMs = 10 * 60 * 1000) {
   console.log("[aggregation] scheduler started, interval:", intervalMs / 1000, "s");
-  runAggregationPipeline().catch(console.error); // Run once immediately on start
-  return setInterval(() => runAggregationPipeline().catch(console.error), intervalMs);
+
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const tick = async () => {
+    try {
+      await runAggregationPipeline();
+    } catch (err) {
+      console.error("[aggregation] pipeline error:", err);
+    } finally {
+      if (!stopped) timer = setTimeout(tick, intervalMs);
+    }
+  };
+
+  void tick(); // uruchom raz od razu przy starcie
+
+  // funkcja do zatrzymania schedulera (np. w testach / graceful shutdown)
+  return () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+  };
 }

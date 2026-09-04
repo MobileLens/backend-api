@@ -2,11 +2,11 @@ import { Hono } from "hono";
 import { db } from "../db/index.js";
 import { photo, video } from "../db/schema.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
-import { presignedPut, storageUrl, BUCKETS } from "../lib/minio.js";
-import { auth } from "../lib/auth.js";
+import { presignedPut, storageUrl, objectExists, BUCKETS } from "../lib/minio.js";
+import type { HonoVariables } from "../types/honoTypes.js";
 import { randomUUID } from "node:crypto";
 
-const uploadRouter = new Hono();
+const uploadRouter = new Hono<{ Variables: HonoVariables }>();
 
 uploadRouter.post("/photo/request", requireAuth, async (c) => {
   const body = await c.req.json<{
@@ -24,8 +24,7 @@ uploadRouter.post("/photo/request", requireAuth, async (c) => {
 });
 
 uploadRouter.post("/photo/confirm", requireAuth, async (c) => {
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
-  if (!session) return c.json({ error: "Unauthorized" }, 401);
+  const user = c.get("user"); // wcześniej: druga, zbędna auth.api.getSession(...)
 
   const body = await c.req.json<{
     objectKey: string;
@@ -39,9 +38,21 @@ uploadRouter.post("/photo/confirm", requireAuth, async (c) => {
   }>();
   if (!body.objectKey || !body.cameraId) return c.json({ error: "objectKey and cameraId required" }, 400);
 
+  // objectKey musi pochodzić z wcześniejszego /photo/request dla TEGO cameraId
+  // — bez tego ktoś mógłby podpiąć dowolny objectKey pod cudzą kamerę.
+  if (!body.objectKey.startsWith(`${body.cameraId}/`)) {
+    return c.json({ error: "objectKey does not match cameraId" }, 400);
+  }
+
+  // Nie ufamy klientowi, że upload faktycznie się wydarzył — sprawdzamy
+  // istnienie obiektu w MinIO (bez pobierania/parsowania pliku, zgodnie z planem).
+  if (!(await objectExists(BUCKETS.photos, body.objectKey))) {
+    return c.json({ error: "Uploaded object not found — upload it before confirming" }, 409);
+  }
+
   const newPhoto = {
     id:               randomUUID(),
-    uploaderId:       session.user.id,
+    uploaderId:       user.id,
     cameraId:         body.cameraId,
     storageUrl:       storageUrl(BUCKETS.photos, body.objectKey),
     exifFocalLength:  body.exifFocalLength ?? null,
@@ -75,8 +86,7 @@ uploadRouter.post("/video/request", requireAuth, async (c) => {
 });
 
 uploadRouter.post("/video/confirm", requireAuth, async (c) => {
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
-  if (!session) return c.json({ error: "Unauthorized" }, 401);
+  const user = c.get("user");
 
   const body = await c.req.json<{
     objectKey: string;
@@ -89,9 +99,17 @@ uploadRouter.post("/video/confirm", requireAuth, async (c) => {
     return c.json({ error: "objectKey, cameraId, fps required" }, 400);
   }
 
+  if (!body.objectKey.startsWith(`${body.cameraId}/`)) {
+    return c.json({ error: "objectKey does not match cameraId" }, 400);
+  }
+
+  if (!(await objectExists(BUCKETS.videos, body.objectKey))) {
+    return c.json({ error: "Uploaded object not found — upload it before confirming" }, 409);
+  }
+
   const newVideo = {
     id:         randomUUID(),
-    uploaderId: session.user.id,
+    uploaderId: user.id,
     cameraId:   body.cameraId,
     storageUrl: storageUrl(BUCKETS.videos, body.objectKey),
     widthPx:    body.widthPx,

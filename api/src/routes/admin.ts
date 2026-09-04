@@ -3,10 +3,10 @@ import { db } from "../db/index.js";
 import { user, roleChangeLog, photo, video } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { requireRole } from "../middleware/requireAuth.js";
-import { auth } from "../lib/auth.js";
+import type { HonoVariables } from "../types/honoTypes.js";
 import { randomUUID } from "node:crypto";
 
-const adminRouter = new Hono();
+const adminRouter = new Hono<{ Variables: HonoVariables }>();
 
 adminRouter.use("/*", requireRole("moderator"));
 
@@ -24,8 +24,7 @@ adminRouter.get("/users", async (c) => {
 });
 
 adminRouter.patch("/users/:id/role", requireRole("admin"), async (c) => {
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
-  if (!session) return c.json({ error: "Unauthorized" }, 401);
+  const actingUser = c.get("user"); // wcześniej: druga, zbędna auth.api.getSession(...)
 
   const targetId = c.req.param("id") as string;
   const body = await c.req.json<{ role: "user" | "reviewer" | "moderator" | "admin" }>();
@@ -44,7 +43,7 @@ adminRouter.patch("/users/:id/role", requireRole("admin"), async (c) => {
     previousRole: previousRole,
     newRole:      body.role,
     changedAt:    new Date(),
-    changedBy:    session.user.id,
+    changedBy:    actingUser.id,
   });
 
   return c.json({ ok: true, previousRole, newRole: body.role });
@@ -53,7 +52,14 @@ adminRouter.patch("/users/:id/role", requireRole("admin"), async (c) => {
 adminRouter.delete("/users/:id", requireRole("admin"), async (c) => {
   const id = c.req.param("id") as string;
   await db.update(user)
-    .set({ isDeletedUser: true, email: `deleted+${id}@mobilelens.invalid` })
+    .set({
+      isDeletedUser: true,
+      email:    `deleted+${id}@mobilelens.invalid`,
+      // Wcześniej username zostawał "zajęty" na zawsze przez usunięte konto,
+      // mimo że email był zwalniany — nikt nie mógł zarejestrować się
+      // ponownie pod tą samą nazwą. Kolumna jest nullable, więc zwalniamy ją tak samo.
+      username: null,
+    })
     .where(eq(user.id, id));
   return c.json({ ok: true });
 });

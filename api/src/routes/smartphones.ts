@@ -3,10 +3,10 @@ import { db } from "../db/index.js";
 import { smartphone, camera, cameraVideoMode, brand } from "../db/schema.js";
 import { eq, and, like, sql } from "drizzle-orm";
 import { requireRole } from "../middleware/requireAuth.js";
-import { auth } from "../lib/auth.js";
+import type { HonoVariables } from "../types/honoTypes.js";
 import { randomUUID } from "node:crypto";
 
-const smartphonesRouter = new Hono();
+const smartphonesRouter = new Hono<{ Variables: HonoVariables }>();
 
 async function getSmartphoneDetail(id: string) {
   const rows = await db.select().from(smartphone).where(eq(smartphone.id, id));
@@ -92,8 +92,7 @@ smartphonesRouter.get("/:id", async (c) => {
 
 // POST /smartphones — reviewer+
 smartphonesRouter.post("/", requireRole("reviewer"), async (c) => {
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
-  if (!session) return c.json({ error: "Unauthorized" }, 401);
+  const user = c.get("user"); // wcześniej: druga, zbędna auth.api.getSession(...)
 
   const body = await c.req.json<{
     brandId: string;
@@ -107,7 +106,7 @@ smartphonesRouter.post("/", requireRole("reviewer"), async (c) => {
   const newPhone = {
     id:          randomUUID(),
     brandId:     body.brandId,
-    addedBy:     session.user.id,
+    addedBy:     user.id,
     verifiedBy:  null as string | null,
     modelName:   body.modelName.trim(),
     imageUrl:    body.imageUrl ?? null,
@@ -122,15 +121,18 @@ smartphonesRouter.post("/", requireRole("reviewer"), async (c) => {
 
 // PATCH /smartphones/:id — moderator+
 smartphonesRouter.patch("/:id", requireRole("moderator"), async (c) => {
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
-  if (!session) return c.json({ error: "Unauthorized" }, 401);
+  const user = c.get("user");
 
   const id = c.req.param("id") as string;
+
+  const existing = await db.select({ id: smartphone.id }).from(smartphone).where(eq(smartphone.id, id));
+  if (!existing[0]) return c.json({ error: "Not found" }, 404);
+
   const body = await c.req.json<Partial<{
     modelName: string; imageUrl: string; releaseDate: string; brandId: string;
   }>>();
 
-  const updates: Partial<typeof smartphone.$inferInsert> = { verifiedBy: session.user.id };
+  const updates: Partial<typeof smartphone.$inferInsert> = { verifiedBy: user.id };
   if (body.modelName)                  updates.modelName   = body.modelName.trim();
   if (body.imageUrl !== undefined)     updates.imageUrl    = body.imageUrl;
   if (body.releaseDate !== undefined)  updates.releaseDate = body.releaseDate;

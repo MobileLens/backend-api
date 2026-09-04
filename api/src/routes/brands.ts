@@ -30,9 +30,20 @@ brandsRouter.post("/", requireRole("moderator"), async (c) => {
 brandsRouter.patch("/:id", requireRole("moderator"), async (c) => {
   const id = c.req.param("id") as string;
   const body = await c.req.json<{ name?: string; logoUrl?: string }>();
+
   const updates: Partial<typeof brand.$inferInsert> = {};
   if (body.name) updates.name = body.name.trim();
   if (body.logoUrl !== undefined) updates.logoUrl = body.logoUrl;
+
+  // Wcześniej: pusty `updates` trafiał do db.update(...).set({}) i wywalał
+  // się z "No values to set" (500 zamiast czytelnego błędu walidacji).
+  if (Object.keys(updates).length === 0) {
+    return c.json({ error: "Nothing to update — provide name and/or logoUrl" }, 400);
+  }
+
+  const existing = await db.select({ id: brand.id }).from(brand).where(eq(brand.id, id));
+  if (!existing[0]) return c.json({ error: "Not found" }, 404);
+
   await db.update(brand).set(updates).where(eq(brand.id, id));
   return c.json({ ok: true });
 });

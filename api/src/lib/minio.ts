@@ -37,3 +37,18 @@ export async function presignedGet(bucket: BucketName, objectKey: string): Promi
 export function storageUrl(bucket: BucketName, objectKey: string): string {
   return `minio://${bucket}/${objectKey}`;
 }
+
+/**
+ * Sprawdza tylko, czy obiekt istnieje w buckecie (HEAD, bez pobierania
+ * zawartości) — zgodnie z planem (sekcja 5) backend nadal nigdy nie
+ * pobiera/parsuje surowego pliku, tylko potwierdza, że upload naprawdę
+ * się wydarzył, zanim zaufa metadanym przysłanym przez klienta.
+ */
+export async function objectExists(bucket: BucketName, objectKey: string): Promise<boolean> {
+  try {
+    await minioClient.statObject(bucket, objectKey);
+    return true;
+  } catch {
+    return false;
+  }
+}

@@ -1,5 +1,18 @@
 # infra/Caddyfile
 
 api.twojadomena.pl {
-    reverse_proxy api:3000
+    # Publicznie czytelne obiekty (np. device-images, ustawiane jako
+    # anonymous-download przez minio-init) — wcześniej nic nie wystawiało
+    # do MinIO drogi z internetu, więc ta polityka bucketu nie miała
+    # żadnego efektu. MinIO samo egzekwuje politykę per-bucket, więc
+    # nieautoryzowane operacje (list, put, itd.) i tak zostaną odrzucone
+    # przez MinIO — ta trasa nie otwiera nic poza tym, na co bucket
+    # sam pozwala anonimowo.
+    handle_path /media/* {
+        reverse_proxy minio:9000
+    }
+
+    handle {
+        reverse_proxy api:3000
+    }
 }

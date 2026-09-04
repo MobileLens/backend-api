@@ -3,11 +3,12 @@ import { db } from "../db/index.js";
 import { review, reviewMedia } from "../db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
-import { storageUrl, BUCKETS } from "../lib/minio.js";
+import { storageUrl, objectExists, BUCKETS } from "../lib/minio.js";
 import { auth } from "../lib/auth.js";
+import type { HonoVariables } from "../types/honoTypes.js";
 import { randomUUID } from "node:crypto";
 
-const reviewsRouter = new Hono();
+const reviewsRouter = new Hono<{ Variables: HonoVariables }>();
 
 // GET /reviews/pending — must be before /:id
 reviewsRouter.get("/pending", requireRole("moderator"), async (c) => {
@@ -30,6 +31,10 @@ reviewsRouter.get("/", async (c) => {
   return c.json(withMedia);
 });
 
+// GET /:id — publiczne dla opublikowanych recenzji, autor/moderator widzą też
+// wersje robocze. Nie stoi za requireAuth (musi działać bez logowania dla
+// opublikowanych), więc ręczne sprawdzenie sesji tutaj jest uzasadnione —
+// w przeciwieństwie do reszty tego pliku.
 reviewsRouter.get("/:id", async (c) => {
   const id = c.req.param("id") as string;
   const rows = await db.select().from(review).where(eq(review.id, id));
@@ -49,8 +54,7 @@ reviewsRouter.get("/:id", async (c) => {
 });
 
 reviewsRouter.post("/", requireRole("reviewer"), async (c) => {
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
-  if (!session) return c.json({ error: "Unauthorized" }, 401);
+  const user = c.get("user"); // wcześniej: druga, zbędna auth.api.getSession(...)
 
   const body = await c.req.json<{
     smartphoneId: string;
@@ -63,9 +67,19 @@ reviewsRouter.post("/", requireRole("reviewer"), async (c) => {
     return c.json({ error: "smartphoneId, title, contentMarkdown required" }, 400);
   }
 
+  // Nie ufamy ślepo objectKey od klienta — sprawdzamy, że plik naprawdę
+  // wylądował w MinIO, zanim zapiszemy na niego wskaźnik w bazie.
+  if (body.mediaItems?.length) {
+    for (const m of body.mediaItems) {
+      if (!(await objectExists(BUCKETS.reviewMedia, m.objectKey))) {
+        return c.json({ error: `Uploaded object not found: ${m.objectKey}` }, 409);
+      }
+    }
+  }
+
   const newReview = {
     id:              randomUUID(),
-    authorId:        session.user.id,
+    authorId:        user.id,
     smartphoneId:    body.smartphoneId,
     title:           body.title.trim(),
     contentMarkdown: body.contentMarkdown,
@@ -92,17 +106,15 @@ reviewsRouter.post("/", requireRole("reviewer"), async (c) => {
 });
 
 reviewsRouter.patch("/:id", requireAuth, async (c) => {
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
-  if (!session) return c.json({ error: "Unauthorized" }, 401);
+  const user = c.get("user");
 
   const id = c.req.param("id") as string;
-  const u = session.user as { id: string; role?: string };
   const rows = await db.select().from(review).where(eq(review.id, id));
   if (!rows[0]) return c.json({ error: "Not found" }, 404);
 
   const current = rows[0];
-  const isMod   = ["moderator", "admin"].includes(u.role ?? "");
-  const isOwner = u.id === current.authorId;
+  const isMod   = ["moderator", "admin"].includes(user.role ?? "");
+  const isOwner = user.id === current.authorId;
   if (!isMod && !isOwner) return c.json({ error: "Forbidden" }, 403);
 
   const body = await c.req.json<{
@@ -111,16 +123,17 @@ reviewsRouter.patch("/:id", requireAuth, async (c) => {
     status?: "draft" | "pending" | "published" | "hidden";
   }>();
 
+  // Wcześniej: dwie prawie identyczne gałęzie if/else dla isMod/owner,
+  // z powielonym title/contentMarkdown. Różni się tylko obsługa statusu:
+  // moderator może ustawić dowolny status, autor tylko odesłać do "pending".
   const updates: Partial<typeof review.$inferInsert> = { updatedAt: new Date() };
+  if (body.title)           updates.title           = body.title.trim();
+  if (body.contentMarkdown) updates.contentMarkdown = body.contentMarkdown;
 
-  if (isMod) {
-    if (body.title)           updates.title           = body.title.trim();
-    if (body.contentMarkdown) updates.contentMarkdown = body.contentMarkdown;
-    if (body.status)          updates.status          = body.status;
-  } else {
-    if (body.title)           updates.title           = body.title.trim();
-    if (body.contentMarkdown) updates.contentMarkdown = body.contentMarkdown;
-    if (body.status === "pending") updates.status = "pending";
+  if (isMod && body.status) {
+    updates.status = body.status;
+  } else if (!isMod && body.status === "pending") {
+    updates.status = "pending";
   }
 
   await db.update(review).set(updates).where(eq(review.id, id));
@@ -128,16 +141,14 @@ reviewsRouter.patch("/:id", requireAuth, async (c) => {
 });
 
 reviewsRouter.delete("/:id", requireAuth, async (c) => {
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
-  if (!session) return c.json({ error: "Unauthorized" }, 401);
+  const user = c.get("user");
 
   const id = c.req.param("id") as string;
-  const u = session.user as { id: string; role?: string };
   const rows = await db.select().from(review).where(eq(review.id, id));
   if (!rows[0]) return c.json({ error: "Not found" }, 404);
 
-  const isMod = ["moderator", "admin"].includes(u.role ?? "");
-  if (!isMod && u.id !== rows[0].authorId) return c.json({ error: "Forbidden" }, 403);
+  const isMod = ["moderator", "admin"].includes(user.role ?? "");
+  if (!isMod && user.id !== rows[0].authorId) return c.json({ error: "Forbidden" }, 403);
 
   await db.delete(review).where(eq(review.id, id));
   return c.json({ ok: true });
