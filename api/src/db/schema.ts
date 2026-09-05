@@ -58,10 +58,11 @@ export const verification = sqliteTable("verification", {
 
 export const jwks = sqliteTable("jwks", {
   id:         text("id").primaryKey(),
-              alg: text('alg').default('EdDSA'),
-              publicKey:  text("public_key").notNull(),
-              privateKey: text("private_key").notNull(),
-              createdAt:  integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+                                publicKey:  text("public_key").notNull(),
+                                  privateKey: text("private_key").notNull(),
+                                    createdAt:  integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+                                alg:        text("alg"),
+                                crv:        text("crv"),
 });
 
 
