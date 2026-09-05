@@ -1,1 +1,0 @@
-ALTER TABLE `jwks` ADD `alg` text DEFAULT 'EdDSA';

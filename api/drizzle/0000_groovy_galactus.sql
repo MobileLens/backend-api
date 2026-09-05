@@ -74,7 +74,9 @@ CREATE TABLE `jwks` (
 	`id` text PRIMARY KEY NOT NULL,
 	`public_key` text NOT NULL,
 	`private_key` text NOT NULL,
-	`created_at` integer DEFAULT (unixepoch()) NOT NULL
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
+	`alg` text,
+	`crv` text
 );
 --> statement-breakpoint
 CREATE TABLE `photo` (

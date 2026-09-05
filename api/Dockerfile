@@ -2,6 +2,7 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+
 RUN apk add --no-cache python3 make g++
 
 COPY package*.json ./
@@ -11,33 +12,16 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
+
 RUN mkdir -p /app/data && chown -R node:node /app/data
 USER node
 
-
-FROM node:22-alpine AS migrate
-
-WORKDIR /app
-
-RUN apk add --no-cache python3 make g++
-
-COPY package*.json ./
-RUN npm ci
-
-COPY . .
-
-RUN mkdir -p /app/data && chown -R node:node /app/data
-
-RUN printf '#!/bin/sh\nset -e\necho "Waiting for /app/data..."\nuntil [ -w /app/data ]; do sleep 1; done\necho "Running migrations..."\nexec node_modules/.bin/drizzle-kit migrate\n' > /app/run-migrate.sh && chmod +x /app/run-migrate.sh
-
-USER node
-
-CMD ["/app/run-migrate.sh"]
-
+# ── Production image ──────────────────────────────────────────────────────────
 
 FROM node:22-alpine AS runner
 
 WORKDIR /app
+
 
 RUN apk add --no-cache python3 make g++ sqlite
 
@@ -45,6 +29,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
+
 
 RUN mkdir -p /app/data && chown -R node:node /app/data
 
