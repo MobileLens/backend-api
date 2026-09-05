@@ -33,6 +33,7 @@ export async function uploadStream(
   objectKey: string,
   data: Buffer | ReadableStream<Uint8Array> | Readable,
   size: number,
+  contentType?: string,
 ): Promise<void> {
   let payload: Buffer | Readable;
 
@@ -44,7 +45,8 @@ export async function uploadStream(
     payload = data as Readable;
   }
 
-  await minioClient.putObject(bucket, objectKey, payload, size);
+  const metaData = contentType ? { "Content-Type": contentType } : undefined;
+  await minioClient.putObject(bucket, objectKey, payload, size, metaData);
 }
 
 export async function objectExists(bucket: BucketName, objectKey: string): Promise<boolean> {
