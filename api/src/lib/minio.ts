@@ -23,27 +23,21 @@ export const BUCKETS = {
 
 export type BucketName = (typeof BUCKETS)[keyof typeof BUCKETS];
 
-/** Generate a presigned PUT URL valid for 15 minutes */
+
 export async function presignedPut(bucket: BucketName, objectKey: string): Promise<string> {
   return minioClient.presignedPutObject(bucket, objectKey, 15 * 60);
 }
 
-/** Generate a presigned GET URL valid for 1 hour */
+
 export async function presignedGet(bucket: BucketName, objectKey: string): Promise<string> {
   return minioClient.presignedGetObject(bucket, objectKey, 60 * 60);
 }
 
-/** Public-style URL used in DB storage_url column */
 export function storageUrl(bucket: BucketName, objectKey: string): string {
   return `minio://${bucket}/${objectKey}`;
 }
 
-/**
- * Sprawdza tylko, czy obiekt istnieje w buckecie (HEAD, bez pobierania
- * zawartości) — zgodnie z planem (sekcja 5) backend nadal nigdy nie
- * pobiera/parsuje surowego pliku, tylko potwierdza, że upload naprawdę
- * się wydarzył, zanim zaufa metadanym przysłanym przez klienta.
- */
+
 export async function objectExists(bucket: BucketName, objectKey: string): Promise<boolean> {
   try {
     await minioClient.statObject(bucket, objectKey);

@@ -35,8 +35,6 @@ brandsRouter.patch("/:id", requireRole("moderator"), async (c) => {
   if (body.name) updates.name = body.name.trim();
   if (body.logoUrl !== undefined) updates.logoUrl = body.logoUrl;
 
-  // Wcześniej: pusty `updates` trafiał do db.update(...).set({}) i wywalał
-  // się z "No values to set" (500 zamiast czytelnego błędu walidacji).
   if (Object.keys(updates).length === 0) {
     return c.json({ error: "Nothing to update — provide name and/or logoUrl" }, 400);
   }

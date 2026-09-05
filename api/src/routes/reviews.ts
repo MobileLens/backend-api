@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 
 const reviewsRouter = new Hono<{ Variables: HonoVariables }>();
 
-// GET /reviews/pending — must be before /:id
+
 reviewsRouter.get("/pending", requireRole("moderator"), async (c) => {
   const rows = await db.select().from(review).where(eq(review.status, "pending"));
   return c.json(rows);
@@ -31,10 +31,8 @@ reviewsRouter.get("/", async (c) => {
   return c.json(withMedia);
 });
 
-// GET /:id — publiczne dla opublikowanych recenzji, autor/moderator widzą też
-// wersje robocze. Nie stoi za requireAuth (musi działać bez logowania dla
-// opublikowanych), więc ręczne sprawdzenie sesji tutaj jest uzasadnione —
-// w przeciwieństwie do reszty tego pliku.
+
+
 reviewsRouter.get("/:id", async (c) => {
   const id = c.req.param("id") as string;
   const rows = await db.select().from(review).where(eq(review.id, id));
@@ -123,9 +121,7 @@ reviewsRouter.patch("/:id", requireAuth, async (c) => {
     status?: "draft" | "pending" | "published" | "hidden";
   }>();
 
-  // Wcześniej: dwie prawie identyczne gałęzie if/else dla isMod/owner,
-  // z powielonym title/contentMarkdown. Różni się tylko obsługa statusu:
-  // moderator może ustawić dowolny status, autor tylko odesłać do "pending".
+
   const updates: Partial<typeof review.$inferInsert> = { updatedAt: new Date() };
   if (body.title)           updates.title           = body.title.trim();
   if (body.contentMarkdown) updates.contentMarkdown = body.contentMarkdown;

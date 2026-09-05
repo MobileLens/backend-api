@@ -24,7 +24,7 @@ uploadRouter.post("/photo/request", requireAuth, async (c) => {
 });
 
 uploadRouter.post("/photo/confirm", requireAuth, async (c) => {
-  const user = c.get("user"); // wcześniej: druga, zbędna auth.api.getSession(...)
+  const user = c.get("user");
 
   const body = await c.req.json<{
     objectKey: string;
@@ -38,14 +38,11 @@ uploadRouter.post("/photo/confirm", requireAuth, async (c) => {
   }>();
   if (!body.objectKey || !body.cameraId) return c.json({ error: "objectKey and cameraId required" }, 400);
 
-  // objectKey musi pochodzić z wcześniejszego /photo/request dla TEGO cameraId
-  // — bez tego ktoś mógłby podpiąć dowolny objectKey pod cudzą kamerę.
   if (!body.objectKey.startsWith(`${body.cameraId}/`)) {
     return c.json({ error: "objectKey does not match cameraId" }, 400);
   }
 
-  // Nie ufamy klientowi, że upload faktycznie się wydarzył — sprawdzamy
-  // istnienie obiektu w MinIO (bez pobierania/parsowania pliku, zgodnie z planem).
+
   if (!(await objectExists(BUCKETS.photos, body.objectKey))) {
     return c.json({ error: "Uploaded object not found — upload it before confirming" }, 409);
   }

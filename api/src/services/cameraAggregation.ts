@@ -1,20 +1,14 @@
-/**
- * Camera aggregation pipeline (plan section 4).
- *
- * Runs periodically on the pending camera rows.
- * Groups by (smartphone_id, type, facing), computes median/mode,
- * promotes one row to approved and rejects duplicates.
- */
+
 
 import { db } from "../db/index.js";
 import { camera } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 
-// Minimum submissions before auto-approval
+
 const MIN_SUBMISSIONS = 3;
-// Maximum allowed relative deviation before a value is considered an outlier (20%)
+
 const OUTLIER_THRESHOLD = 0.20;
-// Minimum agreement fraction required for auto-approval
+
 const MIN_AGREEMENT = 0.66;
 
 type CameraRow = typeof camera.$inferSelect;
@@ -47,7 +41,7 @@ function mode<T extends string | number>(values: T[]): T {
   return best;
 }
 
-/** Reject rows whose numeric values deviate > OUTLIER_THRESHOLD from the group median */
+
 function findOutliers(rows: CameraRow[]): Set<string> {
   const outlierIds = new Set<string>();
 
@@ -66,7 +60,7 @@ function findOutliers(rows: CameraRow[]): Set<string> {
   return outlierIds;
 }
 
-/** Compute agreement: fraction of rows matching the modal value across all discrete fields */
+
 function agreementScore(rows: CameraRow[]): number {
   if (rows.length === 0) return 0;
   let totalChecks = 0;
@@ -85,19 +79,15 @@ function agreementScore(rows: CameraRow[]): number {
 
 async function aggregateGroup(rows: CameraRow[]) {
   if (rows.length < MIN_SUBMISSIONS) {
-    // Not enough data — leave pending for moderator
+
     return;
   }
 
   const outlierIds = findOutliers(rows);
   const cleanRows = rows.filter(r => !outlierIds.has(r.id));
 
-  // Cała grupa jest teraz aktualizowana w jednej transakcji. Wcześniej
-  // odrzucenie outlierów i promocja zwycięzcy były osobnymi zapytaniami —
-  // awaria w środku (np. crash procesu) potrafiła zostawić grupę w
-  // niespójnym stanie (część już odrzucona, reszta nietknięta).
   await db.transaction(async (tx) => {
-    // Reject outlier rows automatically
+
     for (const id of outlierIds) {
       await tx.update(camera)
         .set({ status: "rejected", reviewedAt: new Date(), reviewedBy: null })
@@ -105,13 +95,13 @@ async function aggregateGroup(rows: CameraRow[]) {
     }
 
     if (cleanRows.length < MIN_SUBMISSIONS) {
-      // After outlier removal, too few remain — leave rest pending
+
       return;
     }
 
     const agreement = agreementScore(cleanRows);
     if (agreement < MIN_AGREEMENT) {
-      // Low consensus — leave for manual moderation
+
       return;
     }
 
@@ -126,8 +116,6 @@ async function aggregateGroup(rows: CameraRow[]) {
       ois:     mode(cleanRows.map(r => r.ois)),
     };
 
-    // Promote first (oldest) row to approved with consensus values.
-    // Sortujemy kopię, żeby nie modyfikować w miejscu tablicy wejściowej.
     const sorted = [...cleanRows].sort(
       (a, b) => a.submittedAt.getTime() - b.submittedAt.getTime()
     );
@@ -143,7 +131,7 @@ async function aggregateGroup(rows: CameraRow[]) {
       })
       .where(eq(camera.id, winner.id));
 
-    // Reject the rest of the clean group as duplicate
+
     const losers = sorted.filter(r => r.id !== winner.id);
     for (const row of losers) {
       await tx.update(camera)
@@ -154,14 +142,14 @@ async function aggregateGroup(rows: CameraRow[]) {
 }
 
 export async function runAggregationPipeline() {
-  // Fetch all pending camera rows
+
   const pendingRows = await db.select()
     .from(camera)
     .where(eq(camera.status, "pending"));
 
   if (pendingRows.length === 0) return;
 
-  // Group by (smartphone_id, type, facing)
+
   const groups = new Map<string, CameraRow[]>();
   for (const row of pendingRows) {
     const key = `${row.smartphoneId}::${row.type}::${row.facing}`;
@@ -181,14 +169,7 @@ export async function runAggregationPipeline() {
   console.log(`[aggregation] processed ${groups.size} groups from ${pendingRows.length} pending rows`);
 }
 
-/**
- * Uruchamia pipeline cyklicznie. Wcześniej używał setInterval, co przy
- * wolniejszym przebiegu (np. więcej danych w przyszłości) mogło odpalić
- * kolejny przebieg zanim poprzedni się skończył — dwa przebiegi mogłyby
- * złapać te same wiersze pending. Teraz kolejne uruchomienie jest
- * planowane dopiero PO zakończeniu poprzedniego (rekurencyjny setTimeout),
- * więc przebiegi nigdy się nie nakładają.
- */
+
 export function startAggregationScheduler(intervalMs = 10 * 60 * 1000) {
   console.log("[aggregation] scheduler started, interval:", intervalMs / 1000, "s");
 
@@ -205,9 +186,7 @@ export function startAggregationScheduler(intervalMs = 10 * 60 * 1000) {
     }
   };
 
-  void tick(); // uruchom raz od razu przy starcie
-
-  // funkcja do zatrzymania schedulera (np. w testach / graceful shutdown)
+  void tick();
   return () => {
     stopped = true;
     if (timer) clearTimeout(timer);

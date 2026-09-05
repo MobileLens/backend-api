@@ -8,7 +8,7 @@ import type { HonoVariables } from "../types/honoTypes.js";
 const favoritesRouter = new Hono<{ Variables: HonoVariables }>();
 
 favoritesRouter.get("/", requireAuth, async (c) => {
-  const user = c.get("user"); // wcześniej: druga, zbędna auth.api.getSession(...)
+  const user = c.get("user");
 
   const rows = await db
     .select({

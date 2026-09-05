@@ -23,7 +23,6 @@ async function getSmartphoneDetail(id: string) {
   return { ...rows[0], cameras: camerasWithModes };
 }
 
-// GET /smartphones/compare?ids=id1,id2
 smartphonesRouter.get("/compare", async (c) => {
   const idsParam = c.req.query("ids") ?? "";
   const ids = idsParam.split(",").filter(Boolean).slice(0, 5);
@@ -32,7 +31,7 @@ smartphonesRouter.get("/compare", async (c) => {
   return c.json(results.filter(Boolean));
 });
 
-// GET /smartphones?q=&brand_id=&page=&limit=
+
 smartphonesRouter.get("/", async (c) => {
   const q       = c.req.query("q") ?? "";
   const brandId = c.req.query("brand_id");
@@ -76,7 +75,7 @@ smartphonesRouter.get("/", async (c) => {
   return c.json({ data: rows, page, limit });
 });
 
-// GET /smartphones/:id
+
 smartphonesRouter.get("/:id", async (c) => {
   const id = c.req.param("id") as string;
   const detail = await getSmartphoneDetail(id);
@@ -90,7 +89,7 @@ smartphonesRouter.get("/:id", async (c) => {
   return c.json(detail);
 });
 
-// POST /smartphones — reviewer+
+
 smartphonesRouter.post("/", requireRole("reviewer"), async (c) => {
   const user = c.get("user"); // wcześniej: druga, zbędna auth.api.getSession(...)
 
@@ -119,7 +118,7 @@ smartphonesRouter.post("/", requireRole("reviewer"), async (c) => {
   return c.json(newPhone, 201);
 });
 
-// PATCH /smartphones/:id — moderator+
+
 smartphonesRouter.patch("/:id", requireRole("moderator"), async (c) => {
   const user = c.get("user");
 
@@ -142,7 +141,7 @@ smartphonesRouter.patch("/:id", requireRole("moderator"), async (c) => {
   return c.json({ ok: true });
 });
 
-// DELETE /smartphones/:id — admin only
+
 smartphonesRouter.delete("/:id", requireRole("admin"), async (c) => {
   await db.delete(smartphone).where(eq(smartphone.id, c.req.param("id") as string));
   return c.json({ ok: true });

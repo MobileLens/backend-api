@@ -8,7 +8,6 @@ import { randomUUID } from "node:crypto";
 
 const camerasRouter = new Hono<{ Variables: HonoVariables }>();
 
-// GET /cameras?smartphone_id= — public, approved only
 camerasRouter.get("/", async (c) => {
   const smartphoneId = c.req.query("smartphone_id");
   if (!smartphoneId) return c.json({ error: "smartphone_id required" }, 400);
@@ -24,16 +23,13 @@ camerasRouter.get("/", async (c) => {
   return c.json(withModes);
 });
 
-// GET /cameras/pending — moderator+. (Ten router nie ma GET /:id, więc nie ma
-// tu ryzyka kolizji kolejności tras — mimo starego komentarza sugerującego inaczej.)
 camerasRouter.get("/pending", requireRole("moderator"), async (c) => {
   const rows = await db.select().from(camera).where(eq(camera.status, "pending"));
   return c.json(rows);
 });
 
-// POST /cameras
 camerasRouter.post("/", requireAuth, async (c) => {
-  const user = c.get("user"); // wcześniej: druga, zbędna auth.api.getSession(...)
+  const user = c.get("user");
 
   const body = await c.req.json<{
     smartphoneId: string;
@@ -92,7 +88,7 @@ camerasRouter.post("/", requireAuth, async (c) => {
   return c.json(newCamera, 201);
 });
 
-// PATCH /cameras/:id/review
+
 camerasRouter.patch("/:id/review", requireRole("moderator"), async (c) => {
   const user = c.get("user");
 

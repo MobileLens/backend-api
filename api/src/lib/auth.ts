@@ -7,14 +7,11 @@ import * as schema from "../db/schema.js";
 const isProd = process.env["NODE_ENV"] === "production";
 const secretFromEnv = process.env["BETTER_AUTH_SECRET"];
 
-
-if (isProd) {
-  if (!secretFromEnv) {
-    throw new Error(
-      "BETTER_AUTH_SECRET nie jest ustawiony"
-    );
-  }
-  }
+if (isProd && !secretFromEnv) {
+  throw new Error(
+    "BETTER_AUTH_SECRET nie jest ustawiony w środowisku produkcyjnym. "
+  );
+}
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -36,6 +33,13 @@ export const auth = betterAuth({
   secret: secretFromEnv ?? "dev-only-insecure-secret",
   baseURL: process.env["API_BASE_URL"] ?? "http://localhost:3000",
 
+
+  advanced: {
+    ipAddress: {
+      ipAddressHeaders: ["x-forwarded-for"],
+    },
+  },
+
   plugins: [
     bearer(),
     jwt({
@@ -45,7 +49,7 @@ export const auth = betterAuth({
     }),
   ],
 
-
+  // Expose custom user fields
   user: {
     additionalFields: {
       username: { type: "string", required: false, unique: true },

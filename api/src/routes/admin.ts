@@ -55,9 +55,6 @@ adminRouter.delete("/users/:id", requireRole("admin"), async (c) => {
     .set({
       isDeletedUser: true,
       email:    `deleted+${id}@mobilelens.invalid`,
-      // Wcześniej username zostawał "zajęty" na zawsze przez usunięte konto,
-      // mimo że email był zwalniany — nikt nie mógł zarejestrować się
-      // ponownie pod tą samą nazwą. Kolumna jest nullable, więc zwalniamy ją tak samo.
       username: null,
     })
     .where(eq(user.id, id));
