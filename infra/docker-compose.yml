@@ -1,5 +1,3 @@
-# infra/docker-compose.yml
-
 services:
 
   caddy:
@@ -18,10 +16,6 @@ services:
       api:
         condition: service_healthy
 
-  # Jednorazowy krok migracji — odpalany z etapu "builder" Dockerfile'a
-  # (tam, gdzie jest drizzle-kit; obraz produkcyjny go nie ma, bo to
-  # devDependency). Bez tego serwisu świeży wolumen sqlite-data nie ma
-  # ani jednej tabeli i "api" pada od razu przy starcie.
   migrate:
     build:
       context: ../api
@@ -46,11 +40,6 @@ services:
     env_file:
       - ../.env
     environment:
-      # Tylko wartości zależne od topologii sieci Dockera. API_BASE_URL
-      # i ALLOWED_ORIGINS celowo NIE są tu zahardkodowane — `environment:`
-      # nadpisuje `env_file`, więc gdyby były tu wpisane na sztywno,
-      # zmiana ich w .env nic by nie dała. Oba pochodzą teraz z ../.env
-      # (patrz _env / .env.example).
       - NODE_ENV=production
       - DATABASE_PATH=/app/data/db.sqlite
       - MINIO_ENDPOINT=minio
@@ -83,7 +72,7 @@ services:
       timeout: 5s
       retries: 5
 
-minio-init:
+  minio-init:
     image: minio/mc:latest
     restart: "no"
     env_file:
