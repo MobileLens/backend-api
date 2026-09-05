@@ -3,6 +3,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, jwt } from "better-auth/plugins";
 import { db } from "../db/index.js";
 import * as schema from "../db/schema.js";
+import { APIError } from "better-auth";
 
 const isProd = process.env["NODE_ENV"] === "production";
 const secretFromEnv = process.env["BETTER_AUTH_SECRET"];
@@ -31,7 +32,11 @@ export const auth = betterAuth({
     minPasswordLength: 8,
     maxPasswordLength: 128,
     passwordValidation: (password: string) => {
-      return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/.test(password);
+      const isStrong = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/.test(password);
+      if (!isStrong) {
+        throw new APIError("BAD_REQUEST", { message: "Hasło musi mieć min. 8 znaków, wielką literę, cyfrę i znak specjalny." });
+      }
+      return true;
     },
   },
 
