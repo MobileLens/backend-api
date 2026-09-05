@@ -27,9 +27,12 @@ RUN npm ci
 COPY . .
 
 RUN mkdir -p /app/data && chown -R node:node /app/data
+
+RUN printf '#!/bin/sh\nset -e\necho "Waiting for /app/data..."\nuntil [ -w /app/data ]; do sleep 1; done\necho "Running migrations..."\nexec node_modules/.bin/drizzle-kit migrate\n' > /app/run-migrate.sh && chmod +x /app/run-migrate.sh
+
 USER node
 
-CMD ["node_modules/.bin/drizzle-kit", "migrate"]
+CMD ["/app/run-migrate.sh"]
 
 
 FROM node:22-alpine AS runner
