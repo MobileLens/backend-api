@@ -45,6 +45,17 @@ export function storageUrl(bucket: BucketName, objectKey: string): string {
 }
 
 
+export async function uploadStream(
+  bucket: BucketName,
+  objectKey: string,
+  stream: ReadableStream<Uint8Array>,
+  size: number,
+): Promise<void> {
+  const nodeStream = stream as any;
+
+  await minioClient.putObject(bucket, objectKey, nodeStream, size);
+}
+
 export async function objectExists(bucket: BucketName, objectKey: string): Promise<boolean> {
   try {
     await minioClient.statObject(bucket, objectKey);

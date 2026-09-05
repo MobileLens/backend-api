@@ -2,11 +2,34 @@ import { Hono } from "hono";
 import { db } from "../db/index.js";
 import { photo, video } from "../db/schema.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
-import { presignedPut, storageUrl, objectExists, BUCKETS } from "../lib/minio.js";
+import { presignedPut, uploadStream, storageUrl, objectExists, BUCKETS } from "../lib/minio.js";
 import type { HonoVariables } from "../types/honoTypes.js";
 import { randomUUID } from "node:crypto";
 
 const uploadRouter = new Hono<{ Variables: HonoVariables }>();
+
+uploadRouter.post("/photo/upload", requireAuth, async (c) => {
+  const user = c.get("user");
+  const formData = await c.req.formData();
+
+  const file = formData.get("file") as File;
+  const cameraId = formData.get("cameraId") as string;
+
+  if (!file || !cameraId) {
+    return c.json({ error: "file and cameraId required" }, 400);
+  }
+
+  const ext = file.type === "image/png" ? "png"
+  : file.type === "image/webp" ? "webp"
+  : "jpg";
+  const objectKey = `${cameraId}/${randomUUID()}.${ext}`;
+
+
+  const stream = file.stream() as ReadableStream<Uint8Array>;
+  await uploadStream(BUCKETS.photos, objectKey, stream, file.size);
+
+  return c.json({ objectKey, uploadedBytes: file.size }, 200);
+});
 
 uploadRouter.post("/photo/request", requireAuth, async (c) => {
   const body = await c.req.json<{
@@ -49,17 +72,17 @@ uploadRouter.post("/photo/confirm", requireAuth, async (c) => {
 
   const newPhoto = {
     id:               randomUUID(),
-    uploaderId:       user.id,
-    cameraId:         body.cameraId,
-    storageUrl:       storageUrl(BUCKETS.photos, body.objectKey),
-    exifFocalLength:  body.exifFocalLength ?? null,
-    exifAperture:     body.exifAperture ?? null,
-    exifIso:          body.exifIso ?? null,
-    exifShutterSpeed: body.exifShutterSpeed ?? null,
-    widthPx:          body.widthPx,
-    heightPx:         body.heightPx,
-    uploadDate:       new Date(),
-    status:           "pending" as const,
+                  uploaderId:       user.id,
+                  cameraId:         body.cameraId,
+                  storageUrl:       storageUrl(BUCKETS.photos, body.objectKey),
+                  exifFocalLength:  body.exifFocalLength ?? null,
+                  exifAperture:     body.exifAperture ?? null,
+                  exifIso:          body.exifIso ?? null,
+                  exifShutterSpeed: body.exifShutterSpeed ?? null,
+                  widthPx:          body.widthPx,
+                  heightPx:         body.heightPx,
+                  uploadDate:       new Date(),
+                  status:           "pending" as const,
   };
 
   await db.insert(photo).values(newPhoto);
@@ -106,14 +129,14 @@ uploadRouter.post("/video/confirm", requireAuth, async (c) => {
 
   const newVideo = {
     id:         randomUUID(),
-    uploaderId: user.id,
-    cameraId:   body.cameraId,
-    storageUrl: storageUrl(BUCKETS.videos, body.objectKey),
-    widthPx:    body.widthPx,
-    heightPx:   body.heightPx,
-    fps:        body.fps,
-    uploadDate: new Date(),
-    status:     "pending" as const,
+                  uploaderId: user.id,
+                  cameraId:   body.cameraId,
+                  storageUrl: storageUrl(BUCKETS.videos, body.objectKey),
+                  widthPx:    body.widthPx,
+                  heightPx:   body.heightPx,
+                  fps:        body.fps,
+                  uploadDate: new Date(),
+                  status:     "pending" as const,
   };
 
   await db.insert(video).values(newVideo);
@@ -123,10 +146,10 @@ uploadRouter.post("/video/confirm", requireAuth, async (c) => {
 uploadRouter.post("/review-media/request", requireAuth, async (c) => {
   const body = await c.req.json<{ type: "photo" | "video"; mimeType: string }>();
   const ext = body.mimeType.includes("png") ? "png"
-    : body.mimeType.includes("webp") ? "webp"
-    : body.mimeType.includes("mov") ? "mov"
-    : body.mimeType.includes("webm") ? "webm"
-    : body.type === "video" ? "mp4" : "jpg";
+  : body.mimeType.includes("webp") ? "webp"
+  : body.mimeType.includes("mov") ? "mov"
+  : body.mimeType.includes("webm") ? "webm"
+  : body.type === "video" ? "mp4" : "jpg";
 
   const objectKey = `${randomUUID()}.${ext}`;
   const uploadUrl = await presignedPut(BUCKETS.reviewMedia, objectKey);
