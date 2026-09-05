@@ -15,6 +15,13 @@
       "when": 1788599695808,
       "tag": "0001_fine_dakota_north",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788601247940,
+      "tag": "0002_whole_surge",
+      "breakpoints": true
     }
   ]
 }
