@@ -22,7 +22,7 @@ services:
     build:
       context: ../api
       dockerfile: Dockerfile
-      target: builder
+      target: migrate
     restart: "no"
     env_file:
       - ../.env
@@ -42,7 +42,6 @@ services:
     env_file:
       - ../.env
     environment:
-
       - NODE_ENV=production
       - DATABASE_PATH=/app/data/db.sqlite
       - MINIO_ENDPOINT=minio
