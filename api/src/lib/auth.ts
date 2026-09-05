@@ -3,14 +3,14 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, jwt } from "better-auth/plugins";
 import { db } from "../db/index.js";
 import * as schema from "../db/schema.js";
-import { APIError } from "better-auth";
 
 const isProd = process.env["NODE_ENV"] === "production";
 const secretFromEnv = process.env["BETTER_AUTH_SECRET"];
 
 if (isProd && !secretFromEnv) {
   throw new Error(
-    "BETTER_AUTH_SECRET nie jest ustawiony w środowisku produkcyjnym. "
+    "BETTER_AUTH_SECRET nie jest ustawiony w środowisku produkcyjnym. " +
+    "Ustaw go w .env (patrz plan wdrożenia, sekcja 1) przed uruchomieniem."
   );
 }
 
@@ -31,14 +31,6 @@ export const auth = betterAuth({
     requireEmailVerification: false,
     minPasswordLength: 8,
     maxPasswordLength: 128,
-    passwordValidation: (password: string) => {
-      console.log(">>> SPRAWDZAM HASŁO:", password); // <-- DODANO LOG
-      const isStrong = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/.test(password);
-      if (!isStrong) {
-        throw new APIError("BAD_REQUEST", { message: "Hasło musi mieć min. 8 znaków, wielką literę, cyfrę i znak specjalny." });
-      }
-      return true;
-    },
   },
 
   secret: secretFromEnv ?? "dev-only-insecure-secret",
@@ -65,6 +57,21 @@ export const auth = betterAuth({
       role:     { type: "string", required: false, defaultValue: "user" },
     },
   },
+
+  hooks: {
+    before: {
+      signUpEmail: async ({ email, password }) => {
+        const passwordStrengthRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
+
+        if (!passwordStrengthRegex.test(password)) {
+          throw new Error(
+            "Hasło musi zawierać co najmniej 8 znaków, " +
+            "małą literę, wielką literę, cyfrę i znak specjalny."
+          );
+        }
+      },
+    },
+  },
 });
 
-export type Auth = typeof auth;
+// export type Auth = typeof auth;
