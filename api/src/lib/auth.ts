@@ -32,6 +32,7 @@ export const auth = betterAuth({
     minPasswordLength: 8,
     maxPasswordLength: 128,
     passwordValidation: (password: string) => {
+      console.log(">>> SPRAWDZAM HASŁO:", password); // <-- DODANO LOG
       const isStrong = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/.test(password);
       if (!isStrong) {
         throw new APIError("BAD_REQUEST", { message: "Hasło musi mieć min. 8 znaków, wielką literę, cyfrę i znak specjalny." });
