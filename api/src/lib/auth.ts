@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, jwt } from "better-auth/plugins";
+import { createAuthMiddleware, APIError } from "better-auth/api";
 import { db } from "../db/index.js";
 import * as schema from "../db/schema.js";
 
@@ -13,6 +14,9 @@ if (isProd && !secretFromEnv) {
     "Ustaw go w .env (patrz plan wdrożenia, sekcja 1) przed uruchomieniem."
   );
 }
+
+
+const PASSWORD_STRENGTH_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -58,20 +62,30 @@ export const auth = betterAuth({
     },
   },
 
-  hooks: {
-    before: {
-      signUpEmail: async ({ email, password }) => {
-        const passwordStrengthRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
 
-        if (!passwordStrengthRegex.test(password)) {
-          throw new Error(
-            "Hasło musi zawierać co najmniej 8 znaków, " +
-            "małą literę, wielką literę, cyfrę i znak specjalny."
-          );
-        }
-      },
-    },
+  hooks: {
+    before: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/sign-up/email") {
+        return;
+      }
+
+      const password = ctx.body?.password as string | undefined;
+
+      if (!password) {
+        throw new APIError("BAD_REQUEST", {
+          message: "Hasło jest wymagane.",
+        });
+      }
+
+      if (!PASSWORD_STRENGTH_REGEX.test(password)) {
+        throw new APIError("BAD_REQUEST", {
+          message:
+          "Hasło musi zawierać co najmniej 8 znaków, " +
+          "małą literę, wielką literę, cyfrę i znak specjalny.",
+        });
+      }
+    }),
   },
 });
 
-// export type Auth = typeof auth;
+export type Auth = typeof auth;
