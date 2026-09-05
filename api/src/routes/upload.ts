@@ -2,49 +2,12 @@ import { Hono } from "hono";
 import { db } from "../db/index.js";
 import { photo, video } from "../db/schema.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
-import { presignedPut, uploadStream, storageUrl, objectExists, BUCKETS } from "../lib/minio.js";
+import { uploadStream, storageUrl, BUCKETS } from "../lib/minio.js";
 import type { HonoVariables } from "../types/honoTypes.js";
 import { randomUUID } from "node:crypto";
 
 const uploadRouter = new Hono<{ Variables: HonoVariables }>();
 
-uploadRouter.post("/photo/upload", requireAuth, async (c) => {
-  const user = c.get("user");
-  const formData = await c.req.formData();
-
-  const file = formData.get("file") as File;
-  const cameraId = formData.get("cameraId") as string;
-
-  if (!file || !cameraId) {
-    return c.json({ error: "file and cameraId required" }, 400);
-  }
-
-  const ext = file.type === "image/png" ? "png"
-  : file.type === "image/webp" ? "webp"
-  : "jpg";
-  const objectKey = `${cameraId}/${randomUUID()}.${ext}`;
-
-
-  const stream = file.stream() as ReadableStream<Uint8Array>;
-  await uploadStream(BUCKETS.photos, objectKey, stream, file.size);
-
-  return c.json({ objectKey, uploadedBytes: file.size }, 200);
-});
-
-uploadRouter.post("/photo/request", requireAuth, async (c) => {
-  const body = await c.req.json<{
-    cameraId: string;
-    mimeType: "image/jpeg" | "image/png" | "image/webp";
-    widthPx: number;
-    heightPx: number;
-  }>();
-  if (!body.cameraId) return c.json({ error: "cameraId required" }, 400);
-
-  const ext = body.mimeType === "image/png" ? "png" : body.mimeType === "image/webp" ? "webp" : "jpg";
-  const objectKey = `${body.cameraId}/${randomUUID()}.${ext}`;
-  const uploadUrl = await presignedPut(BUCKETS.photos, objectKey);
-  return c.json({ uploadUrl, objectKey });
-});
 
 uploadRouter.post("/photo/upload", requireAuth, async (c) => {
   const user = c.get("user");
@@ -52,121 +15,119 @@ uploadRouter.post("/photo/upload", requireAuth, async (c) => {
 
   const file = formData.get("file") as File;
   const cameraId = formData.get("cameraId") as string;
+  const widthPx = Number(formData.get("widthPx"));
+  const heightPx = Number(formData.get("heightPx"));
 
-  if (!file || !cameraId) {
-    return c.json({ error: "file and cameraId required" }, 400);
+  if (!file || !cameraId || !widthPx || !heightPx) {
+    return c.json({ error: "file, cameraId, widthPx, and heightPx are required" }, 400);
   }
 
   const ext = file.type === "image/png" ? "png"
   : file.type === "image/webp" ? "webp"
   : "jpg";
   const objectKey = `${cameraId}/${randomUUID()}.${ext}`;
+
 
   const arrayBuffer = await file.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
-
   await uploadStream(BUCKETS.photos, objectKey, buffer, file.size);
 
-  return c.json({ objectKey, uploadedBytes: file.size }, 200);
-});
-
-
-  if (!(await objectExists(BUCKETS.photos, body.objectKey))) {
-    return c.json({ error: "Uploaded object not found — upload it before confirming" }, 409);
-  }
+  const exifFocalLength = formData.has("exifFocalLength") ? Number(formData.get("exifFocalLength")) : null;
+  const exifAperture = formData.has("exifAperture") ? Number(formData.get("exifAperture")) : null;
+  const exifIso = formData.has("exifIso") ? Number(formData.get("exifIso")) : null;
+  const exifShutterSpeed = formData.has("exifShutterSpeed") ? Number(formData.get("exifShutterSpeed")) : null;
 
   const newPhoto = {
     id:               randomUUID(),
                   uploaderId:       user.id,
-                  cameraId:         body.cameraId,
-                  storageUrl:       storageUrl(BUCKETS.photos, body.objectKey),
-                  exifFocalLength:  body.exifFocalLength ?? null,
-                  exifAperture:     body.exifAperture ?? null,
-                  exifIso:          body.exifIso ?? null,
-                  exifShutterSpeed: body.exifShutterSpeed ?? null,
-                  widthPx:          body.widthPx,
-                  heightPx:         body.heightPx,
+                  cameraId,
+                  storageUrl:       storageUrl(BUCKETS.photos, objectKey),
+                  exifFocalLength,
+                  exifAperture,
+                  exifIso,
+                  exifShutterSpeed,
+                  widthPx,
+                  heightPx,
                   uploadDate:       new Date(),
                   status:           "pending" as const,
   };
 
   await db.insert(photo).values(newPhoto);
-  return c.json({ id: newPhoto.id, status: "pending" }, 201);
+  return c.json({ id: newPhoto.id, status: "pending", objectKey }, 201);
 });
 
-uploadRouter.post("/video/request", requireAuth, async (c) => {
-  const body = await c.req.json<{
-    cameraId: string;
-    mimeType: string;
-    widthPx: number;
-    heightPx: number;
-    fps: number;
-  }>();
-  if (!body.cameraId) return c.json({ error: "cameraId required" }, 400);
 
-  const ext = body.mimeType.includes("quicktime") ? "mov" : body.mimeType.includes("webm") ? "webm" : "mp4";
-  const objectKey = `${body.cameraId}/${randomUUID()}.${ext}`;
-  const uploadUrl = await presignedPut(BUCKETS.videos, objectKey);
-  return c.json({ uploadUrl, objectKey });
-});
-
-uploadRouter.post("/video/confirm", requireAuth, async (c) => {
+uploadRouter.post("/video/upload", requireAuth, async (c) => {
   const user = c.get("user");
+  const formData = await c.req.formData();
 
-  const body = await c.req.json<{
-    objectKey: string;
-    cameraId: string;
-    widthPx: number;
-    heightPx: number;
-    fps: number;
-  }>();
-  if (!body.objectKey || !body.cameraId || !body.fps) {
-    return c.json({ error: "objectKey, cameraId, fps required" }, 400);
+  const file = formData.get("file") as File;
+  const cameraId = formData.get("cameraId") as string;
+  const widthPx = Number(formData.get("widthPx"));
+  const heightPx = Number(formData.get("heightPx"));
+  const fps = Number(formData.get("fps"));
+
+  if (!file || !cameraId || !widthPx || !heightPx || !fps) {
+    return c.json({ error: "file, cameraId, widthPx, heightPx, and fps are required" }, 400);
   }
 
-  if (!body.objectKey.startsWith(`${body.cameraId}/`)) {
-    return c.json({ error: "objectKey does not match cameraId" }, 400);
-  }
+  const ext = file.type.includes("quicktime") ? "mov"
+  : file.type.includes("webm") ? "webm"
+  : "mp4";
+  const objectKey = `${cameraId}/${randomUUID()}.${ext}`;
 
-  if (!(await objectExists(BUCKETS.videos, body.objectKey))) {
-    return c.json({ error: "Uploaded object not found — upload it before confirming" }, 409);
-  }
+
+  const arrayBuffer = await file.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  await uploadStream(BUCKETS.videos, objectKey, buffer, file.size);
 
   const newVideo = {
     id:         randomUUID(),
                   uploaderId: user.id,
-                  cameraId:   body.cameraId,
-                  storageUrl: storageUrl(BUCKETS.videos, body.objectKey),
-                  widthPx:    body.widthPx,
-                  heightPx:   body.heightPx,
-                  fps:        body.fps,
+                  cameraId,
+                  storageUrl: storageUrl(BUCKETS.videos, objectKey),
+                  widthPx,
+                  heightPx,
+                  fps,
                   uploadDate: new Date(),
                   status:     "pending" as const,
   };
 
   await db.insert(video).values(newVideo);
-  return c.json({ id: newVideo.id, status: "pending" }, 201);
+  return c.json({ id: newVideo.id, status: "pending", objectKey }, 201);
 });
 
-uploadRouter.post("/review-media/request", requireAuth, async (c) => {
-  const body = await c.req.json<{ type: "photo" | "video"; mimeType: string }>();
-  const ext = body.mimeType.includes("png") ? "png"
-  : body.mimeType.includes("webp") ? "webp"
-  : body.mimeType.includes("mov") ? "mov"
-  : body.mimeType.includes("webm") ? "webm"
-  : body.type === "video" ? "mp4" : "jpg";
+
+
+uploadRouter.post("/review-media/upload", requireAuth, async (c) => {
+  const formData = await c.req.formData();
+  const file = formData.get("file") as File;
+  if (!file) return c.json({ error: "file required" }, 400);
+
+  const ext = file.type.includes("png") ? "png"
+  : file.type.includes("webp") ? "webp"
+  : file.type.includes("mov") ? "mov"
+  : file.type.includes("webm") ? "webm"
+  : file.type.includes("video") ? "mp4" : "jpg";
 
   const objectKey = `${randomUUID()}.${ext}`;
-  const uploadUrl = await presignedPut(BUCKETS.reviewMedia, objectKey);
-  return c.json({ uploadUrl, objectKey });
+  const arrayBuffer = await file.arrayBuffer();
+  await uploadStream(BUCKETS.reviewMedia, objectKey, Buffer.from(arrayBuffer), file.size);
+
+  return c.json({ objectKey, storageUrl: storageUrl(BUCKETS.reviewMedia, objectKey) }, 201);
 });
 
-uploadRouter.post("/device-image/request", requireRole("moderator"), async (c) => {
-  const body = await c.req.json<{ mimeType: string }>();
-  const ext = body.mimeType.includes("png") ? "png" : body.mimeType.includes("webp") ? "webp" : "jpg";
+uploadRouter.post("/device-image/upload", requireRole("moderator"), async (c) => {
+  const formData = await c.req.formData();
+  const file = formData.get("file") as File;
+  if (!file) return c.json({ error: "file required" }, 400);
+
+  const ext = file.type.includes("png") ? "png" : file.type.includes("webp") ? "webp" : "jpg";
   const objectKey = `${randomUUID()}.${ext}`;
-  const uploadUrl = await presignedPut(BUCKETS.deviceImages, objectKey);
-  return c.json({ uploadUrl, objectKey });
+  const arrayBuffer = await file.arrayBuffer();
+  await uploadStream(BUCKETS.deviceImages, objectKey, Buffer.from(arrayBuffer), file.size);
+
+  return c.json({ objectKey, storageUrl: storageUrl(BUCKETS.deviceImages, objectKey) }, 201);
 });
 
 export { uploadRouter };

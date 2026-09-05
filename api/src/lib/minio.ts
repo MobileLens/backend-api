@@ -1,12 +1,11 @@
 import * as Minio from "minio";
+import { Readable } from "node:stream";
 
-const ENDPOINT  = process.env["MINIO_ENDPOINT"]  ?? "localhost";
-const PORT      = parseInt(process.env["MINIO_PORT"] ?? "9000", 10);
-const ACCESS    = process.env["MINIO_ROOT_USER"]     ?? "minioadmin";
-const SECRET    = process.env["MINIO_ROOT_PASSWORD"] ?? "minioadmin";
-const USE_SSL   = process.env["MINIO_USE_SSL"] === "true";
-
-const PUBLIC_MINIO_URL = process.env["PUBLIC_MINIO_URL"] ?? "http://localhost:9000";
+const ENDPOINT   = process.env["MINIO_ENDPOINT"]   ?? "localhost";
+const PORT       = parseInt(process.env["MINIO_PORT"] ?? "9000", 10);
+const ACCESS     = process.env["MINIO_ROOT_USER"]     ?? "minioadmin";
+const SECRET     = process.env["MINIO_ROOT_PASSWORD"] ?? "minioadmin";
+const USE_SSL    = process.env["MINIO_USE_SSL"] === "true";
 
 export const minioClient = new Minio.Client({
   endPoint:        ENDPOINT,
@@ -25,33 +24,27 @@ export const BUCKETS = {
 
 export type BucketName = (typeof BUCKETS)[keyof typeof BUCKETS];
 
-
-export async function presignedPut(bucket: BucketName, objectKey: string): Promise<string> {
-
-  const internalUrl = await minioClient.presignedPutObject(bucket, objectKey, 15 * 60);
-
-  return internalUrl.replace(/^https?:\/\/[^/]+/, PUBLIC_MINIO_URL);
-}
-
-
-export async function presignedGet(bucket: BucketName, objectKey: string): Promise<string> {
-  const internalUrl = await minioClient.presignedGetObject(bucket, objectKey, 60 * 60);
-  return internalUrl.replace(/^https?:\/\/[^/]+/, PUBLIC_MINIO_URL);
-}
-
-
 export function storageUrl(bucket: BucketName, objectKey: string): string {
   return `minio://${bucket}/${objectKey}`;
 }
 
-
 export async function uploadStream(
   bucket: BucketName,
   objectKey: string,
-  buffer: Buffer,
+  data: Buffer | ReadableStream<Uint8Array> | Readable,
   size: number,
 ): Promise<void> {
-  await minioClient.putObject(bucket, objectKey, buffer, size);
+  let payload: Buffer | Readable;
+
+  if (data instanceof Buffer) {
+    payload = data;
+  } else if (typeof ReadableStream !== "undefined" && data instanceof ReadableStream) {
+    payload = Readable.fromWeb(data as any);
+  } else {
+    payload = data as Readable;
+  }
+
+  await minioClient.putObject(bucket, objectKey, payload, size);
 }
 
 export async function objectExists(bucket: BucketName, objectKey: string): Promise<boolean> {

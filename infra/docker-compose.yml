@@ -83,7 +83,7 @@ services:
       timeout: 5s
       retries: 5
 
-  minio-init:
+minio-init:
     image: minio/mc:latest
     restart: "no"
     env_file:
@@ -95,6 +95,9 @@ services:
         mc mb --ignore-existing local/videos;
         mc mb --ignore-existing local/review-media;
         mc mb --ignore-existing local/device-images;
+        mc anonymous set download local/photos;
+        mc anonymous set download local/videos;
+        mc anonymous set download local/review-media;
         mc anonymous set download local/device-images;
         exit 0;
       "
