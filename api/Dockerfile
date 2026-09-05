@@ -12,12 +12,13 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-# ── Production image ──────────────────────────────────────────────────────────
+RUN mkdir -p /app/data && chown -R node:node /app/data
+USER node
+
 
 FROM node:22-alpine AS runner
 
 WORKDIR /app
-
 
 RUN apk add --no-cache python3 make g++ sqlite
 
