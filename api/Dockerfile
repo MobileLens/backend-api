@@ -2,10 +2,11 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+
 RUN apk add --no-cache python3 make g++
 
 COPY package*.json ./
-# Install ALL deps (including dev) for build
+
 RUN npm ci
 
 COPY . .
@@ -17,7 +18,7 @@ FROM node:22-alpine AS runner
 
 WORKDIR /app
 
-.
+
 RUN apk add --no-cache python3 make g++ sqlite
 
 COPY package*.json ./
