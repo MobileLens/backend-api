@@ -29,7 +29,7 @@ COPY . .
 RUN mkdir -p /app/data && chown -R node:node /app/data
 USER node
 
-CMD ["npx", "drizzle-kit", "migrate"]
+CMD ["node_modules/.bin/drizzle-kit", "migrate"]
 
 
 FROM node:22-alpine AS runner

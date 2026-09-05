@@ -30,7 +30,6 @@ services:
       - DATABASE_PATH=/app/data/db.sqlite
     volumes:
       - sqlite-data:/app/data
-    command: ["npx", "drizzle-kit", "migrate"]
     networks:
       - internal
 
@@ -69,10 +68,11 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
   minio-init:
     image: minio/mc:latest
