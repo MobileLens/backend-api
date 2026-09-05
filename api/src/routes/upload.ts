@@ -46,24 +46,29 @@ uploadRouter.post("/photo/request", requireAuth, async (c) => {
   return c.json({ uploadUrl, objectKey });
 });
 
-uploadRouter.post("/photo/confirm", requireAuth, async (c) => {
+uploadRouter.post("/photo/upload", requireAuth, async (c) => {
   const user = c.get("user");
+  const formData = await c.req.formData();
 
-  const body = await c.req.json<{
-    objectKey: string;
-    cameraId: string;
-    widthPx: number;
-    heightPx: number;
-    exifFocalLength?: number;
-    exifAperture?: number;
-    exifIso?: number;
-    exifShutterSpeed?: number;
-  }>();
-  if (!body.objectKey || !body.cameraId) return c.json({ error: "objectKey and cameraId required" }, 400);
+  const file = formData.get("file") as File;
+  const cameraId = formData.get("cameraId") as string;
 
-  if (!body.objectKey.startsWith(`${body.cameraId}/`)) {
-    return c.json({ error: "objectKey does not match cameraId" }, 400);
+  if (!file || !cameraId) {
+    return c.json({ error: "file and cameraId required" }, 400);
   }
+
+  const ext = file.type === "image/png" ? "png"
+  : file.type === "image/webp" ? "webp"
+  : "jpg";
+  const objectKey = `${cameraId}/${randomUUID()}.${ext}`;
+
+  const arrayBuffer = await file.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  await uploadStream(BUCKETS.photos, objectKey, buffer, file.size);
+
+  return c.json({ objectKey, uploadedBytes: file.size }, 200);
+});
 
 
   if (!(await objectExists(BUCKETS.photos, body.objectKey))) {
