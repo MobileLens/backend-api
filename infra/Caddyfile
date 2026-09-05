@@ -1,4 +1,8 @@
 mobilelens.duckdns.org {
+    request_body {
+        max_size 350MB
+    }
+
     handle_path /media/* {
         reverse_proxy minio:9000
     }
