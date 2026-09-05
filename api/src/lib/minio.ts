@@ -6,6 +6,8 @@ const ACCESS    = process.env["MINIO_ROOT_USER"]     ?? "minioadmin";
 const SECRET    = process.env["MINIO_ROOT_PASSWORD"] ?? "minioadmin";
 const USE_SSL   = process.env["MINIO_USE_SSL"] === "true";
 
+const PUBLIC_MINIO_URL = process.env["PUBLIC_MINIO_URL"] ?? "http://localhost:9000";
+
 export const minioClient = new Minio.Client({
   endPoint:        ENDPOINT,
   port:            PORT,
@@ -25,13 +27,18 @@ export type BucketName = (typeof BUCKETS)[keyof typeof BUCKETS];
 
 
 export async function presignedPut(bucket: BucketName, objectKey: string): Promise<string> {
-  return minioClient.presignedPutObject(bucket, objectKey, 15 * 60);
+
+  const internalUrl = await minioClient.presignedPutObject(bucket, objectKey, 15 * 60);
+
+  return internalUrl.replace(/^https?:\/\/[^/]+/, PUBLIC_MINIO_URL);
 }
 
 
 export async function presignedGet(bucket: BucketName, objectKey: string): Promise<string> {
-  return minioClient.presignedGetObject(bucket, objectKey, 60 * 60);
+  const internalUrl = await minioClient.presignedGetObject(bucket, objectKey, 60 * 60);
+  return internalUrl.replace(/^https?:\/\/[^/]+/, PUBLIC_MINIO_URL);
 }
+
 
 export function storageUrl(bucket: BucketName, objectKey: string): string {
   return `minio://${bucket}/${objectKey}`;
