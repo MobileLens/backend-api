@@ -28,11 +28,15 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false,
+    minPasswordLength: 8,
+    maxPasswordLength: 128,
+    passwordValidation: (password) => {
+      return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/.test(password);
+    },
   },
 
   secret: secretFromEnv ?? "dev-only-insecure-secret",
   baseURL: process.env["API_BASE_URL"] ?? "http://localhost:3000",
-
 
   advanced: {
     ipAddress: {
@@ -42,14 +46,13 @@ export const auth = betterAuth({
 
   plugins: [
     bearer(),
-    jwt({
-      jwks: {
-        keyPairConfig: { alg: "EdDSA" },
-      },
-    }),
+                               jwt({
+                                 jwks: {
+                                   keyPairConfig: { alg: "EdDSA" },
+                                 },
+                               }),
   ],
 
-  // Expose custom user fields
   user: {
     additionalFields: {
       username: { type: "string", required: false, unique: true },
