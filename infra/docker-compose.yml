@@ -23,7 +23,7 @@ services:
       context: ../api
       dockerfile: Dockerfile
       target: migrate
-    restart: "no"
+    restart: on-failure
     env_file:
       - ../.env
     environment:
@@ -72,11 +72,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 30s
 
   minio-init:
     image: minio/mc:latest
-    restart: "no"
+    restart: on-failure
     env_file:
       - ../.env
     entrypoint: >
