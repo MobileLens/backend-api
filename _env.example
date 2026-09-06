@@ -1,0 +1,15 @@
+# ── MinIO ─────────────────────────────────────────────────────────────────────
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=sekretne
+MINIO_ENDPOINT=minio
+MINIO_PORT=9000
+MINIO_USE_SSL=false
+PUBLIC_MINIO_URL=https://mobilelens.duckdns.org/media
+
+# ── better-auth ───────────────────────────────────────────────────────────────
+BETTER_AUTH_SECRET=sekretne
+
+# ── API ───────────────────────────────────────────────────────────────────────
+API_BASE_URL=https://mobilelens.duckdns.org
+PORT=3000
+ALLOWED_ORIGINS=*
