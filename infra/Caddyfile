@@ -13,7 +13,9 @@ mobilelens.duckdns.org {
         file_server
     }
 
+    # Kompresja odpowiedzi API (JSON). Tylko tutaj - zdjęcia i filmy z /media są już skompresowane.
     handle {
+        encode zstd gzip
         reverse_proxy api:3000
     }
 }
