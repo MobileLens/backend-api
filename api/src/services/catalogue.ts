@@ -264,11 +264,11 @@ export function parseCatalogueBody(body: unknown): Parsed<CatalogueQuery> {
 
 // ── budowanie zapytania ───────────────────────────────────────────────────────────────────────────
 // Ekwiwalent = wartość * crop factor. Rozmiar matrycy: mianownik formatu ("1/1.28" -> 1.28);
-// gdy aparat nie ma podanego formatu, przybliżenie z crop factora (1" ~ crop 2.7).
+// gdy aparat nie ma podanego formatu, przybliżenie liczone przez backend (lib/sensorApprox.ts).
 const EQ_FOCAL      = sql`(${camera.focalLengthMm} * ${camera.cropFactor})`;
 const EQ_APERTURE   = sql`(${camera.aperture} * ${camera.cropFactor})`;
 const EQ_APERTURE_N = sql`(COALESCE(${camera.apertureNarrow}, ${camera.aperture}) * ${camera.cropFactor})`;
-const SENSOR_DEN    = sql`COALESCE(${camera.sensorDenominator}, ${camera.cropFactor} / 2.7)`;
+const SENSOR_DEN    = sql`COALESCE(${camera.sensorDenominator}, ${camera.sensorDenominatorApprox})`;
 
 function cameraConds(f: CameraFilter): SQL[] {
   const c: SQL[] = [];

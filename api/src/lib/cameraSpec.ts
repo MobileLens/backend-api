@@ -2,6 +2,7 @@ import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { photo } from "../db/schema.js";
 import { tidyNumber } from "./numbers.js";
+import { sensorApproxFields } from "./sensorApprox.js";
 
 export const CAMERA_TYPES = ["wide", "ultrawide", "tele", "macro", "other"] as const;
 export const FACINGS      = ["back", "front", "other"] as const;
@@ -25,6 +26,8 @@ export type CameraSpec = {
   sensorFormat: string | null;
   sensorModel: string | null;
   sensorDenominator: number | null;
+  sensorDenominatorApprox: number | null;
+  sensorFormatApprox: string | null;
   photoWidthPx: number | null;
   photoHeightPx: number | null;
   aspectRatio: string | null;
@@ -200,6 +203,11 @@ export function validateCameraSpec(input: Record<string, unknown>): { ok: true; 
       sensorFormat: sf.value,
       sensorModel,
       sensorDenominator: sensorDenominatorOf(sf.value),
+      // przybliżenie zawsze z danych aparatu (także gdy sensorFormat jest podany - jako podpowiedź)
+      ...sensorApproxFields({
+        pixelPitchUm: out["pixelPitchUm"]!, resolutionMp: out["resolutionMp"]!, cropFactor: out["cropFactor"]!,
+        photoWidthPx, photoHeightPx, aspectRatio: ar.value,
+      }),
       photoWidthPx,
       photoHeightPx,
       aspectRatio: ar.value,

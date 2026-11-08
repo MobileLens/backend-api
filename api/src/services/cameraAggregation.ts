@@ -2,6 +2,7 @@ import { db } from "../db/index.js";
 import { camera } from "../db/schema.js";
 import { and, eq } from "drizzle-orm";
 import { approvedTwin } from "./cameraTwins.js";
+import { refreshSensorApprox } from "./sensorApproxService.js";
 
 const MIN_SUBMISSIONS = 3;
 const OUTLIER_THRESHOLD = 0.20;
@@ -111,6 +112,7 @@ async function aggregateGroup(rows: CameraRow[]) {
       })
       .where(and(eq(camera.id, winner.id), eq(camera.status, "pending"))).run().changes;
 
+    if (changed) refreshSensorApprox(tx, winner.id); // dane po konsensusie -> nowe przybliżenie matrycy
     const losers = changed ? sorted.filter(r => r.id !== winner.id) : sorted;
     for (const row of losers) {
       tx.update(camera)

@@ -9,6 +9,7 @@ import { validateCameraSpec, validateVideoModes, sampleCoverage, sampleCoverageM
 import { phoneSummaries, videoModesOf } from "../services/phones.js";
 import { deleteCamerasWithMedia } from "../services/cameraDeletion.js";
 import { approvedTwin } from "../services/cameraTwins.js";
+import { sensorFormatCandidates } from "../services/sensorApproxService.js";
 import type { HonoVariables } from "../types/honoTypes.js";
 import { randomUUID } from "node:crypto";
 
@@ -94,6 +95,36 @@ camerasRouter.get("/mine", requireAuth, async (c) => {
   return c.json(await decorateList(rows));
 });
 
+/**
+ * Porządki w sensorFormat: zatwierdzone aparaty, których sensorFormat wygląda na wyliczony przez aplikację
+ * (zgadza się z jednym z dawnych wzorów po zaokrągleniu), a nie podany przez człowieka, i nie był jeszcze
+ * sprawdzony przez moderatora. Obok przybliżenie liczone przez backend. Nic nie jest czyszczone automatycznie.
+ */
+camerasRouter.get("/sensor-format-review", requireRole("moderator"), async (c) => {
+  const rows = sensorFormatCandidates();
+  const phones = await phoneSummaries(rows.map((r) => r.smartphoneId));
+  return c.json({ data: rows.map((r) => ({ ...r, phone: phones.get(r.smartphoneId) ?? null })), total: rows.length });
+});
+
+/**
+ * Decyzja moderatora: {action:"confirm"} - sensorFormat zostaje jako podany fakt (oznaczony jako sprawdzony),
+ * {action:"clear"} - sensorFormat = null (aplikacje pokażą wtedy "≈" + przybliżenie).
+ */
+camerasRouter.post("/:id/sensor-format-review", requireRole("moderator"), async (c) => {
+  const id = c.req.param("id") as string;
+  const body = await c.req.json<{ action?: unknown }>().catch(() => null);
+  const action = body?.action;
+  if (action !== "confirm" && action !== "clear") {
+    return fail(c, 400, "INVALID_FIELD", 'action must be "confirm" or "clear"', { field: "action" });
+  }
+  const existing = (await db.select({ id: camera.id }).from(camera).where(eq(camera.id, id)))[0];
+  if (!existing) return fail(c, 404, "CAMERA_NOT_FOUND", "Camera not found");
+  await db.update(camera).set(action === "clear"
+    ? { sensorFormat: null, sensorDenominator: null, sensorFormatReviewedAt: new Date() }
+    : { sensorFormatReviewedAt: new Date() }).where(eq(camera.id, id));
+  return c.json({ ok: true, camera: await cameraWithModes(id) });
+});
+
 camerasRouter.get("/pending", requireRole("moderator"), async (c) => {
   const rows = await db.select().from(camera).where(eq(camera.status, "pending"))
     .orderBy(asc(camera.submittedAt), asc(camera.id));
@@ -131,6 +162,8 @@ camerasRouter.post("/", requireAuth, async (c) => {
     submittedAt:  new Date(),
     reviewedAt:   null as Date | null,
     ...spec.data,
+    // sensorFormat od moderatora (ze specyfikacji producenta) liczy się od razu jako sprawdzony
+    sensorFormatReviewedAt: spec.data.sensorFormat !== null && hasRole(user.role, "moderator") ? new Date() : null,
   };
 
   // Jedno oczekujące zgłoszenie na (użytkownik, telefon, typ, kierunek): podwójne wysłanie
@@ -188,8 +221,10 @@ camerasRouter.patch("/:id", requireRole("moderator"), async (c) => {
   const modes = parseVideoModesPatch(body);
   if (!modes.ok) return fail(c, 400, "INVALID_FIELD", modes.message, { field: modes.field });
 
+  // moderator podał / zmienił / wyczyścił sensorFormat -> wartość sprawdzona przez moderatora
+  const sensorFormatTouched = "sensorFormat" in body ? { sensorFormatReviewedAt: new Date() } : {};
   db.transaction((tx) => {
-    tx.update(camera).set(spec.data).where(eq(camera.id, id)).run();
+    tx.update(camera).set({ ...spec.data, ...sensorFormatTouched }).where(eq(camera.id, id)).run();
     if (modes.data) replaceVideoModes(tx, id, modes.data);
   });
   return c.json({ ok: true, camera: await cameraWithModes(id) });
@@ -232,6 +267,7 @@ camerasRouter.patch("/:id/review", requireRole("moderator"), async (c) => {
     const spec = validateCameraSpec({ ...existing, ...changes });
     if (!spec.ok) return fail(c, 400, "INVALID_FIELD", spec.message, { field: spec.field });
     Object.assign(updates, spec.data);
+    if ("sensorFormat" in body) updates.sensorFormatReviewedAt = new Date();
     const m = parseVideoModesPatch(body);
     if (!m.ok) return fail(c, 400, "INVALID_FIELD", m.message, { field: m.field });
     newModes = m.data;

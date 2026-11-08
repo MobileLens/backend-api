@@ -140,6 +140,12 @@ export const camera = sqliteTable("camera", {
   note: text("note", { length: 500 }),                // notatka moderatora o nietypowym aparacie (przypis pod specyfikacją)
   // mianownik rozmiaru matrycy wyliczany z sensorFormat ("1/1.28" -> 1.28, "1" -> 1) - do filtrowania
   sensorDenominator: real("sensor_denominator"),
+  // Przybliżenie rozmiaru matrycy liczone przez backend (lib/sensorApprox.ts) z rozmiaru piksela i rozdzielczości
+  // albo z crop factora; przeliczane przy każdym zapisie aparatu. sensorFormat zostaje wartością podaną przez człowieka.
+  sensorDenominatorApprox: real("sensor_denominator_approx"),
+  sensorFormatApprox: text("sensor_format_approx", { length: 16 }),
+  // Kiedy moderator podał albo potwierdził sensorFormat (null = nie sprawdzony przez moderatora).
+  sensorFormatReviewedAt: integer("sensor_format_reviewed_at", { mode: "timestamp" }),
 }, (t) => [
   index("idx_camera_smartphone").on(t.smartphoneId),
   index("idx_camera_submitter").on(t.submitterId),
