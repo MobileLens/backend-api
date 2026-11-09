@@ -123,7 +123,10 @@ export const camera = sqliteTable("camera", {
   cropFactor: real("crop_factor").notNull(),
   pixelPitchUm: real("pixel_pitch_um").notNull(),
   resolutionMp: real("resolution_mp").notNull(),
+  // Wyliczane przez backend: max(photoResolutionsMp) albo resolutionMp, gdy lista jest pusta (zgodność wstecz).
   activeResolutionMp: real("active_resolution_mp").notNull(),
+  // Rozdzielczości zdjęć oferowane przez aplikację aparatu (MP), malejąco, bez powtórzeń; [] = nieznane.
+  photoResolutionsMp: text("photo_resolutions_mp", { mode: "json" }).$type<number[]>().notNull().default(sql`'[]'`),
   afZones: integer("af_zones"),                        // null = nieznane
   ois: text("ois", { enum: ["none", "optical", "sensor_shift"] }), // null = nieznane
   // Obiektyw ze zmienną przysłoną / zoomem optycznym: wymaga zdjęć przykładowych dla różnych wartości.

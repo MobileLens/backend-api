@@ -3,18 +3,19 @@ import { camera } from "../db/schema.js";
 import { and, eq } from "drizzle-orm";
 import { approvedTwin } from "./cameraTwins.js";
 import { refreshSensorApprox } from "./sensorApproxService.js";
+import { activeResolutionOf } from "../lib/cameraSpec.js";
 
 const MIN_SUBMISSIONS = 3;
 const OUTLIER_THRESHOLD = 0.20;
 const MIN_AGREEMENT = 0.66;
 
 type CameraRow = typeof camera.$inferSelect;
-type NumericKey = "focalLengthMm" | "aperture" | "cropFactor" | "pixelPitchUm" | "resolutionMp" | "activeResolutionMp";
+type NumericKey = "focalLengthMm" | "aperture" | "cropFactor" | "pixelPitchUm" | "resolutionMp";
 type DiscreteKey = "afZones" | "ois";
 
 const NUMERIC_KEYS: NumericKey[] = [
   "focalLengthMm", "aperture", "cropFactor",
-  "pixelPitchUm", "resolutionMp", "activeResolutionMp",
+  "pixelPitchUm", "resolutionMp",
 ];
 const DISCRETE_KEYS: DiscreteKey[] = ["afZones", "ois"];
 
@@ -102,13 +103,17 @@ async function aggregateGroup(rows: CameraRow[]) {
       (a, b) => a.submittedAt.getTime() - b.submittedAt.getTime()
     );
     const winner = sorted[0]!;
+    // Lista rozdzielczości zdjęć z najwcześniejszego zgłoszenia, przycięta do rozdzielczości z konsensusu.
+    const res = consensusNumeric.resolutionMp!;
+    const photoResolutionsMp = winner.photoResolutionsMp.filter((v) => v <= res * 1.02);
+    const activeResolutionMp = activeResolutionOf(photoResolutionsMp, res);
 
     // Taki aparat jest już zatwierdzony (np. moderator zrobił to ręcznie) - zgłoszenia są zbędne.
     const twin = approvedTwin(tx, { ...winner, ...consensusNumeric } as Parameters<typeof approvedTwin>[1]);
     const changed = twin ? 0 : tx.update(camera)
       .set({
         status: "approved", reviewedAt: new Date(), reviewedBy: null,
-        ...consensusNumeric, ...consensusDiscrete,
+        ...consensusNumeric, ...consensusDiscrete, photoResolutionsMp, activeResolutionMp,
       })
       .where(and(eq(camera.id, winner.id), eq(camera.status, "pending"))).run().changes;
 

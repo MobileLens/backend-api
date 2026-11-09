@@ -57,6 +57,13 @@
       "when": 1794172193932,
       "tag": "0007_camera_sensor_approx",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1794226479470,
+      "tag": "0008_camera_photo_resolutions",
+      "breakpoints": true
     }
   ]
 }

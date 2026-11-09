@@ -44,12 +44,12 @@ API filtruje po tych wartościach: `eq_focal_min`, `eq_focal_max`, `eq_aperture_
   ```json
   {"smartphoneId":"…","type":"wide|ultrawide|tele|macro|other","facing":"back|front|other",
    "focalLengthMm":6.9,"aperture":1.7,"cropFactor":4.7,"pixelPitchUm":1.2,
-   "resolutionMp":200,"activeResolutionMp":50,"afZones":0,"ois":"none|optical|sensor_shift",
+   "resolutionMp":200,"photoResolutionsMp":[200,50,12],"afZones":0,"ois":"none|optical|sensor_shift",
    "variableAperture":false,"apertureNarrow":null,"opticalZoom":false,"focalLengthMaxMm":null,
    "sensorFormat":"1/1.28","photoWidthPx":8160,"photoHeightPx":6144,"aspectRatio":"4:3","note":null,
    "videoModes":[{"widthPx":3840,"heightPx":2160,"fpsMax":60,"note":null}]}
   ```
-  Zakresy: ogniskowa 0.5–100, przysłona 0.5–32, crop 1–20, pixel pitch 0.1–10, MP 0.1–500, `activeResolutionMp ≤ resolutionMp`. Zmienna przysłona wymaga `apertureNarrow > aperture`; zoom optyczny wymaga `focalLengthMaxMm > focalLengthMm`. Błąd walidacji: `400 INVALID_FIELD` + `field`.
+  Zakresy: ogniskowa 0.5–100, przysłona 0.5–32, crop 1–20, pixel pitch 0.1–10, MP 0.1–500. `photoResolutionsMp` — opcjonalna lista rozdzielczości zdjęć (sekcja 17); stare `activeResolutionMp` jest jeszcze przyjmowane i zamieniane na listę. Zmienna przysłona wymaga `apertureNarrow > aperture`; zoom optyczny wymaga `focalLengthMaxMm > focalLengthMm`. Błąd walidacji: `400 INVALID_FIELD` + `field`.
   Pola opcjonalne (można pominąć albo wysłać `null`; `""` = `null`): `sensorFormat` — rozmiar matrycy bez znaku cala, z kropką: `"1/1.28"`, `"1/2.55"`, `"1"`; `photoWidthPx`/`photoHeightPx` — maks. wymiary zdjęcia (liczby całkowite 1–30000; dłuższy bok zawsze trafia do `photoWidthPx` — gdy wyślesz wymiary w pionie, backend sam zamieni boki); `aspectRatio` — proporcje matrycy `"4:3"`, `"3:2"`, `"1:1"`, `"16:9"`; `note` — notatka moderatora (≤500 znaków), wyświetlana jako przypis pod specyfikacją; ustawia ją tylko moderator (od zwykłego użytkownika jest pomijana). Te same pola przyjmują `PATCH /api/cameras/:id` i `PATCH /api/cameras/:id/review`.
   Odpowiedź zawiera `samples` (pokrycie próbkami zdjęć dla zmiennej przysłony/zoomu).
 - **Dodanie telefonu do katalogu (ekran „My phone" → „Submit to database"):** `POST /api/smartphones` (każdy zalogowany) `{brandName | brandId, modelName, releaseDate?}`. Aplikacja mobilna zna tylko napisy (np. `Build.MANUFACTURER`/`Build.MODEL`), więc wysyłaj `brandName` — marka jest dopasowywana bez względu na wielkość liter, a gdy jej nie ma, zostaje utworzona. Odpowiedź: `201` nowy wpis (`verified:false`, dopóki moderator go nie potwierdzi) albo `200` z `existing:true`, gdy ten model tej marki już jest (użyj zwróconego `id`). Dalej zgłoś aparat: `POST /api/cameras` z tym `id`. Limit: 10 nowych telefonów na dobę (`429 PHONE_LIMIT_REACHED`; moderator bez limitu). Błędy: `MISSING_FIELDS`, `BRAND_NOT_FOUND` (404), `INVALID_FIELD` (`field`).
@@ -115,7 +115,7 @@ type FacetRange = {                 // jeden typ aparatu w GET /api/smartphones/
   eqFocalMin: number | null; eqFocalMax: number | null;       // ekwiwalent ogniskowej (mm); max uwzględnia zoom optyczny
   eqApertureMin: number | null; eqApertureMax: number | null; // ekwiwalent przysłony (f * crop); max uwzględnia zmienną przysłonę
   sensorDenominatorMin: number | null; sensorDenominatorMax: number | null; // "1/1.28" -> 1.28 (bez sensorFormat: sensorDenominatorApprox)
-  resolutionMpMin: number | null; resolutionMpMax: number | null;
+  resolutionMpMin: number | null; resolutionMpMax: number | null; // z resolutionMp (matryca), nie ze zdjęć
   fpsValues: number[];              // unikalne fpsMax trybów wideo, rosnąco
   videoMaxFpsByWidth: { "854": number | null; "1280": number | null; "1920": number | null; "3840": number | null; "7680": number | null };
                                     // największy fpsMax trybu o dłuższym boku >= progu (tryby w pionie liczą się po dłuższym boku); null = brak
@@ -134,7 +134,10 @@ type Camera = {                     // GET /api/cameras?smartphone_id, elementy 
   status: "pending" | "approved" | "rejected"; submittedAt: string; reviewedAt: string | null;
   type: "wide" | "ultrawide" | "tele" | "macro" | "other"; facing: "back" | "front" | "other";
   focalLengthMm: number; aperture: number; cropFactor: number; pixelPitchUm: number;
-  resolutionMp: number; activeResolutionMp: number; afZones: number | null; ois: "none" | "optical" | "sensor_shift" | null; // null = nieznane
+  resolutionMp: number;             // fizyczna liczba pikseli matrycy (MP), np. 48, 50, 200
+  photoResolutionsMp: number[];     // rozdzielczości zdjęć w aplikacji aparatu, malejąco, np. [48, 24, 12]; [] = nieznane (sekcja 17)
+  activeResolutionMp: number;       // tylko do odczytu, zgodność wstecz: max(photoResolutionsMp) albo resolutionMp, gdy lista pusta
+  afZones: number | null; ois: "none" | "optical" | "sensor_shift" | null; // null = nieznane
   variableAperture: boolean; apertureNarrow: number | null; opticalZoom: boolean; focalLengthMaxMm: number | null;
   sensorFormat: string | null;      // "1/1.28" (bez znaku cala; frontend dokleja ″) — TYLKO wartość podana przez człowieka, nigdy wyliczona
   sensorDenominator: number | null; // z sensorFormat ("1/1.28" -> 1.28), tylko do odczytu
@@ -450,3 +453,57 @@ Przykłady: crop 6.13 → `1/2.55`; crop 8.65 → `1/3.6`; piksel 1.0 µm, 8064�
 **Formularze (web, Android, iOS):**
 - Pole „Rozmiar matrycy” wysyłaj tylko, gdy użytkownik je wpisał (ze specyfikacji). Nie wypełniaj go wyliczeniem z cropa/piksela.
 - Panel moderatora może pokazać `≈sensorFormatApprox` jako podpowiedź obok pola, ale **nie wstawiaj** jej do pola.
+
+
+## 17. Rozdzielczości zdjęć: `photoResolutionsMp` zamiast `activeResolutionMp` (09.11.2026)
+**Model aparatu:**
+- `resolutionMp` — bez zmian: fizyczna liczba pikseli matrycy (iPhone 16 main 48, Pixel 8 main 50, Galaxy S24 Ultra main 200).
+- **Nowe** `photoResolutionsMp: number[]` — rozdzielczości, które faktycznie oferuje aplikacja aparatu: iPhone 16 main `[48, 24, 12]`, Pixel 8 main `[12.5]`, S24 Ultra main `[200, 50, 12]`. Nie nazywamy tego „binned”: część trybów (np. 24 MP w iPhonie) jest obliczeniowa, a nie binowaniem.
+- `pixelPitchUm` — bez zmian: fizyczny rozmiar piksela. Backend nie zapisuje rozmiaru piksela po binowaniu.
+- `activeResolutionMp` — zostaje w odpowiedziach dla starych klientów, **tylko do odczytu**: `max(photoResolutionsMp)`, a przy pustej liście `resolutionMp`. Istniejące aparaty dostały w migracji listę `[dotychczasowe activeResolutionMp]`.
+
+**Zapis** (`POST /api/cameras`, `PATCH /api/cameras/:id`, `PATCH /api/cameras/:id/review`):
+- `photoResolutionsMp: [48, 24, 12]` — pełna lista zastępuje poprzednią; `[]` albo `null` = nieznane (czyści listę). Brak pola w PATCH = bez zmian; w POST = `[]`.
+- Backend sortuje malejąco i usuwa powtórzenia (`[12, 48, 24, 12]` → `[48, 24, 12]`) i czyści szum float32.
+- Walidacja → `400 INVALID_FIELD`, `field: "photoResolutionsMp"`: nie tablica, wartość nie liczbowa, wartość poza 0.1–500, wartość > `resolutionMp × 1.02`, więcej niż 8 różnych wartości. Dotyczy też PATCH, który zmniejsza `resolutionMp` poniżej wartości z listy.
+- **Okres przejściowy:** stare `activeResolutionMp: X` (bez `photoResolutionsMp`) → lista `[X]`. Gdy przyjdą oba pola, wygrywa `photoResolutionsMp`. Błąd starego pola: `field: "activeResolutionMp"`. Docelowo `activeResolutionMp` przestanie być przyjmowane — przejdźcie na listę.
+- Scalanie zgłoszeń (konsensus): lista z najwcześniejszego zgłoszenia, bez wartości większych niż `resolutionMp` z konsensusu × 1.02.
+
+**Odczyt:** `photoResolutionsMp` jest wszędzie, gdzie jest aparat: szczegóły telefonu, `/compare`, `GET /api/cameras?smartphone_id`, `/cameras/mine`, `/cameras/pending`, odpowiedzi POST/PATCH.
+
+**Wyświetlanie (web, Android, iOS):**
+- Główna wartość: `resolutionMp` („50 MP”).
+- Druga linia:
+  - lista ma ≥ 2 wartości → „Zdjęcia: 48 · 24 · 12 MP”;
+  - lista ma 1 wartość mniejszą niż `resolutionMp` → „Zdjęcia: tylko 12.5 MP”;
+  - lista ma 1 wartość równą `resolutionMp` (w granicy 2 %) → nic albo „Zdjęcia: 48 MP”;
+  - pusta lista → nic.
+- **Efektywny rozmiar piksela po binowaniu liczy klient, backend go nie zapisuje.** Dla każdej wartości `v` z listy mniejszej niż `resolutionMp`: `k = resolutionMp / v`; jeśli `k` mieści się w 3 % od `n²` dla całkowitego `n ≥ 2`, to rozmiar piksela = `pixelPitchUm × n`. Pokaż największy taki rozmiar, np. „2.4 µm binned (12.5 MP)”. Gdy żadna wartość nie pasuje (np. 48 → 24 MP, k = 2, tryb obliczeniowy), nie pokazuj nic.
+
+```ts
+function binnedPitch(c: Camera): { pitchUm: number; mp: number } | null {
+  let best: { pitchUm: number; mp: number } | null = null;
+  for (const v of c.photoResolutionsMp) {
+    if (v >= c.resolutionMp) continue;
+    const k = c.resolutionMp / v, n = Math.round(Math.sqrt(k));
+    if (n >= 2 && Math.abs(k - n * n) / (n * n) <= 0.03) {
+      const p = { pitchUm: Math.round(c.pixelPitchUm * n * 100) / 100, mp: v };
+      if (!best || p.pitchUm > best.pitchUm) best = p;
+    }
+  }
+  return best;
+}
+```
+Przykłady:
+- iPhone 16 main (48 MP, 1.0 µm, `[48, 24, 12]`): 48/24 = 2 (nie kwadrat, tryb obliczeniowy), 48/12 = 4 = 2² → „2.0 µm binned (12 MP)”.
+- Pixel 8 main (50 MP, 1.2 µm, `[12.5]`): 50/12.5 = 4 → „2.4 µm binned (12.5 MP)”.
+- S24 Ultra main (200 MP, 0.6 µm, `[200, 50, 12]`): 200/50 = 4 → 1.2 µm; 200/12 = 16.7, od 16 o 4 % (> 3 %) → pomijane; wynik „1.2 µm binned (50 MP)”.
+
+**Filtry i facety:** `resolution_min` (`GET /api/smartphones`), `resolutionMin` w `POST /api/smartphones/search` oraz `resolutionMpMin/Max` w `/facets` dotyczą **`resolutionMp` (matrycy)**, nie rozdzielczości zdjęć. Pixel 8 (matryca 50 MP, zdjęcia 12.5 MP) przechodzi `resolution_min=50`.
+
+**Przybliżenie matrycy (sekcja 16):** bez zmian — liczone z `resolutionMp` i fizycznego `pixelPitchUm`; wymiary zdjęcia używane tylko, gdy ich iloczyn mieści się w 5 % od `resolutionMp`.
+
+**Aplikacje (Android/iOS) — co zmienić:**
+- DTO: `photoResolutionsMp: List<Double> = emptyList()`; `activeResolutionMp` zostaw tylko do odczytu.
+- Formularz zgłoszenia: zamiast jednego pola „aktywna rozdzielczość” lista rozdzielczości (chipy „+ dodaj”), wstępnie wypełniona z rozmiarów zdjęć, które aparat urządzenia faktycznie oferuje (Android: `StreamConfigurationMap.getOutputSizes(ImageFormat.JPEG)` → MP, zaokrąglone do 0.1, bez powtórzeń; tylko tryby aplikacji aparatu, nie każdy rozmiar strumienia). Wysyłaj `photoResolutionsMp`, nie `activeResolutionMp`. Nie znasz → nie wysyłaj pola.
+- Specyfikacja: główna wartość `resolutionMp` + druga linia i rozmiar piksela po binowaniu wg reguł powyżej.

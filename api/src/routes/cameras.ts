@@ -17,9 +17,20 @@ const camerasRouter = new Hono<{ Variables: HonoVariables }>();
 
 const SPEC_KEYS = [
   "type", "facing", "focalLengthMm", "aperture", "cropFactor", "pixelPitchUm", "resolutionMp",
-  "activeResolutionMp", "afZones", "ois", "variableAperture", "apertureNarrow", "opticalZoom", "focalLengthMaxMm",
+  "activeResolutionMp", "photoResolutionsMp", "afZones", "ois", "variableAperture", "apertureNarrow", "opticalZoom", "focalLengthMaxMm",
   "sensorFormat", "sensorModel", "photoWidthPx", "photoHeightPx", "aspectRatio", "note",
 ] as const;
+
+/**
+ * Zapisany aparat + zmiany z PATCH. Stare `activeResolutionMp` bez `photoResolutionsMp` zastępuje listę
+ * (X -> [X]); inaczej obecna lista zostaje, gdy pole nie przyszło.
+ */
+function mergeSpec(existing: Record<string, unknown>, changes: Record<string, unknown>) {
+  const merged: Record<string, unknown> = { ...existing, ...changes };
+  if ("activeResolutionMp" in changes && !("photoResolutionsMp" in changes)) delete merged["photoResolutionsMp"];
+  else delete merged["activeResolutionMp"]; // wyliczane, nie wejście
+  return merged;
+}
 
 async function withSamples<T extends { id: string; variableAperture: boolean; opticalZoom: boolean }>(row: T) {
   return { ...row, samples: await sampleCoverage(row.id, row) };
@@ -216,7 +227,7 @@ camerasRouter.patch("/:id", requireRole("moderator"), async (c) => {
     return fail(c, 400, "NOTHING_TO_UPDATE", "Provide at least one field to update");
   }
 
-  const spec = validateCameraSpec({ ...existing, ...changes });
+  const spec = validateCameraSpec(mergeSpec(existing, changes));
   if (!spec.ok) return fail(c, 400, "INVALID_FIELD", spec.message, { field: spec.field });
   const modes = parseVideoModesPatch(body);
   if (!modes.ok) return fail(c, 400, "INVALID_FIELD", modes.message, { field: modes.field });
@@ -264,7 +275,7 @@ camerasRouter.patch("/:id/review", requireRole("moderator"), async (c) => {
   if (status === "approved") {
     const changes: Record<string, unknown> = {};
     for (const k of SPEC_KEYS) if (k in body) changes[k] = body[k];
-    const spec = validateCameraSpec({ ...existing, ...changes });
+    const spec = validateCameraSpec(mergeSpec(existing, changes));
     if (!spec.ok) return fail(c, 400, "INVALID_FIELD", spec.message, { field: spec.field });
     Object.assign(updates, spec.data);
     if ("sensorFormat" in body) updates.sensorFormatReviewedAt = new Date();

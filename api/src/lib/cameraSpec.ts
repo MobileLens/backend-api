@@ -16,7 +16,8 @@ export type CameraSpec = {
   cropFactor: number;
   pixelPitchUm: number;
   resolutionMp: number;
-  activeResolutionMp: number;
+  activeResolutionMp: number;       // wyliczane: max(photoResolutionsMp) albo resolutionMp
+  photoResolutionsMp: number[];     // malejąco, bez powtórzeń; [] = nieznane
   afZones: number | null;
   ois: (typeof OIS_TYPES)[number] | null;
   variableAperture: boolean;
@@ -73,8 +74,49 @@ const RANGES = {
   cropFactor:         [1, 20],
   pixelPitchUm:       [0.1, 10],
   resolutionMp:       [0.1, 500],
-  activeResolutionMp: [0.1, 500],
 } as const;
+
+export const PHOTO_RES_MAX_COUNT = 8;
+const PHOTO_RES_RANGE = [0.1, 500] as const;
+const PHOTO_RES_TOLERANCE = 1.02; // zdjęcie może mieć minimalnie więcej MP niż deklarowana matryca (zaokrąglenia)
+
+/** Rozdzielczość w odpowiedziach dla zgodności wstecz: największa z listy albo rozdzielczość matrycy. */
+export function activeResolutionOf(list: number[], resolutionMp: number): number {
+  return list.length ? Math.max(...list) : resolutionMp;
+}
+
+/**
+ * Lista rozdzielczości zdjęć. `photoResolutionsMp` (pełna lista) ma pierwszeństwo; bez niej stare
+ * `activeResolutionMp` X -> [X]. Brak obu (albo null / []) -> [] = nieznane.
+ */
+function parsePhotoResolutions(input: Record<string, unknown>, resolutionMp: number): { ok: true; value: number[] } | Invalid {
+  const max = resolutionMp * PHOTO_RES_TOLERANCE;
+  const raw = input["photoResolutionsMp"];
+  if (raw !== undefined && raw !== null) {
+    const F = "photoResolutionsMp";
+    if (!Array.isArray(raw)) return bad(F, "photoResolutionsMp must be an array of numbers (use [] for unknown)");
+    const vals: number[] = [];
+    for (const v of raw) {
+      const n = num(v);
+      if (n === null || n < PHOTO_RES_RANGE[0] || n > PHOTO_RES_RANGE[1]) {
+        return bad(F, `photoResolutionsMp values must be numbers between ${PHOTO_RES_RANGE[0]} and ${PHOTO_RES_RANGE[1]}`);
+      }
+      if (n > max) return bad(F, `photoResolutionsMp values cannot exceed resolutionMp (${resolutionMp}) by more than 2%`);
+      vals.push(n);
+    }
+    const list = [...new Set(vals)].sort((a, b) => b - a);
+    if (list.length > PHOTO_RES_MAX_COUNT) return bad(F, `photoResolutionsMp can have at most ${PHOTO_RES_MAX_COUNT} values`);
+    return { ok: true, value: list };
+  }
+  const legacy = input["activeResolutionMp"];
+  if (legacy === undefined || legacy === null) return { ok: true, value: [] };
+  const n = num(legacy);
+  if (n === null || n < PHOTO_RES_RANGE[0] || n > PHOTO_RES_RANGE[1]) {
+    return bad("activeResolutionMp", `activeResolutionMp must be a number between ${PHOTO_RES_RANGE[0]} and ${PHOTO_RES_RANGE[1]}`);
+  }
+  if (n > max) return bad("activeResolutionMp", "activeResolutionMp cannot exceed resolutionMp");
+  return { ok: true, value: [n] };
+}
 
 const bad = (field: string, message: string): Invalid => ({ ok: false, field, message });
 
@@ -100,9 +142,8 @@ export function validateCameraSpec(input: Record<string, unknown>): { ok: true; 
     if (n === null || n < min || n > max) return bad(key, `${key} must be a number between ${min} and ${max}`);
     out[key] = n;
   }
-  if (out["activeResolutionMp"]! > out["resolutionMp"]!) {
-    return bad("activeResolutionMp", "activeResolutionMp cannot exceed resolutionMp");
-  }
+  const pr = parsePhotoResolutions(input, out["resolutionMp"]!);
+  if (!pr.ok) return pr;
 
   // afZones i ois: brak albo null = nieznane (0 / "none" znaczą "na pewno brak").
   const afRaw = input["afZones"] ?? null;
@@ -193,7 +234,8 @@ export function validateCameraSpec(input: Record<string, unknown>): { ok: true; 
       cropFactor: out["cropFactor"]!,
       pixelPitchUm: out["pixelPitchUm"]!,
       resolutionMp: out["resolutionMp"]!,
-      activeResolutionMp: out["activeResolutionMp"]!,
+      activeResolutionMp: activeResolutionOf(pr.value, out["resolutionMp"]!),
+      photoResolutionsMp: pr.value,
       afZones,
       ois: ois as CameraSpec["ois"],
       variableAperture,
