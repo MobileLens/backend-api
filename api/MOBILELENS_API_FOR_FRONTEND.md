@@ -25,6 +25,7 @@ Strona (frontend web): `https://mobilelens.me`. Wersja dokumentu: 07.11.2026 (se
 - `GET /api/brands`, `GET /api/brands/:id`
 - `GET /api/smartphones?q=&brand_id=&sort=&page=&limit=` (+ filtry: `verified`, `variable_aperture`, `optical_zoom`, `video_min_width`, `video_min_fps` — pełna lista w sekcji 11) → lista z `brandName`, `verified`. `sort`: `name` (domyślnie, nazwa modelu) | `brand` (marka, potem model) | `trending` | `new`; inna wartość → `400 INVALID_SORT`
 - `GET /api/smartphones/facets[?verified=true|false]` → zakresy filtrów z wartości w katalogu (typ `Facets` w sekcji 10); `Cache-Control: public, max-age=300` + `ETag`
+- `GET /api/smartphones/names` → `{names: string[]}` — nazwy marek (tylko z co najmniej jednym telefonem) i modeli wszystkich telefonów (także niezweryfikowanych), każda raz, dokładnie jak zapisane, posortowane rosnąco. Słownik do poprawiania literówek w wyszukiwarce („smasnug” → „Samsung”). `Cache-Control: public, max-age=300` + słaby `ETag` (`If-None-Match` → `304`).
 - `GET /api/smartphones/:id` (szczegóły + zatwierdzone aparaty z `videoModes`)
 - `GET /api/smartphones/compare?ids=a,b,c` (2–4 id; więcej → `TOO_MANY_IDS`)
 - `GET /api/smartphones/:id/photos`, `/videos` (tylko zweryfikowane), `POST /api/smartphones/:id/view`
@@ -507,3 +508,9 @@ Przykłady:
 - DTO: `photoResolutionsMp: List<Double> = emptyList()`; `activeResolutionMp` zostaw tylko do odczytu.
 - Formularz zgłoszenia: zamiast jednego pola „aktywna rozdzielczość” lista rozdzielczości (chipy „+ dodaj”), wstępnie wypełniona z rozmiarów zdjęć, które aparat urządzenia faktycznie oferuje (Android: `StreamConfigurationMap.getOutputSizes(ImageFormat.JPEG)` → MP, zaokrąglone do 0.1, bez powtórzeń; tylko tryby aplikacji aparatu, nie każdy rozmiar strumienia). Wysyłaj `photoResolutionsMp`, nie `activeResolutionMp`. Nie znasz → nie wysyłaj pola.
 - Specyfikacja: główna wartość `resolutionMp` + druga linia i rozmiar piksela po binowaniu wg reguł powyżej.
+
+
+## 18. Zmiany 11.11.2026
+- **`GET /api/smartphones/names`** (nowy, publiczny) → `{"names": ["Galaxy S24 Ultra", "Google", "Pixel 9 Pro", "Samsung"]}`. Zastępuje przeglądanie całej listy telefonów przy poprawianiu literówek. Opis w sekcji 3.
+- Galeria `GET /api/smartphones/:id/photos` zwraca dane zdjęcia (`exifFocalLength` — ogniskowa rzeczywista w mm, `exifAperture`, `exifIso`, `exifShutterSpeed` w sekundach, `exifDigitalZoom`) od 06.11 (sekcja 15); `null` = nieznane.
+- Upload do galerii (`/api/upload/photo/upload`): pola liczbowe `exif*` przyjmują też ułamek, np. `exifShutterSpeed=1/731` → `0.00137`. Wcześniej taka wartość była zapisywana jako `null`.

@@ -8,7 +8,7 @@ import { publicUrl, variantUrl, deleteStoredObject } from "../lib/storage.js";
 import { detachPhoneFromReviews } from "../services/reviewPhones.js";
 import { deleteCamerasWithMedia } from "../services/cameraDeletion.js";
 import {
-  parseCatalogueQuery, parseCatalogueBody, searchCatalogue, catalogueFacets, FACINGS, type ParseError,
+  parseCatalogueQuery, parseCatalogueBody, searchCatalogue, catalogueFacets, catalogueNames, FACINGS, type ParseError,
 } from "../services/catalogue.js";
 import {
   getSmartphoneDetail, getSmartphoneDetails, parseBuildModels, findPhoneIdByBuildModels,
@@ -66,6 +66,15 @@ smartphonesRouter.get("/facets", etag({ weak: true }), async (c) => {
   }
   c.header("Cache-Control", FACETS_CACHE);
   return c.json(await catalogueFacets(v === undefined ? undefined : v === "true"));
+});
+
+/**
+ * Nazwy marek i modeli z katalogu (wszystkie telefony, jak GET / bez ?verified) - słownik do poprawiania
+ * literówek w wyszukiwarce aplikacji. Musi być przed /:id.
+ */
+smartphonesRouter.get("/names", etag({ weak: true }), async (c) => {
+  c.header("Cache-Control", FACETS_CACHE);
+  return c.json({ names: await catalogueNames() });
 });
 
 smartphonesRouter.get("/compare", etag({ weak: true }), async (c) => {

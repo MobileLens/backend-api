@@ -486,3 +486,14 @@ export async function catalogueFacets(verified?: boolean): Promise<{ types: Reco
   }
   return { types, front: facetOf(stats.filter((r) => r.facing === "front"), modes.filter((m) => m.facing === "front")) };
 }
+
+/**
+ * Nazwy marek (tylko z co najmniej jednym telefonem) i modeli z całego katalogu, każda raz, dokładnie jak
+ * zapisane, posortowane rosnąco (porównanie kodów znaków - stabilne body i ETag). Dla korekty literówek w aplikacjach.
+ */
+export async function catalogueNames(): Promise<string[]> {
+  const brands = await db.selectDistinct({ name: brand.name }).from(smartphone)
+    .innerJoin(brand, eq(smartphone.brandId, brand.id));
+  const models = await db.selectDistinct({ name: smartphone.modelName }).from(smartphone);
+  return [...new Set([...brands, ...models].map((r) => r.name))].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}

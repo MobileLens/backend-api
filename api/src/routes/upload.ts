@@ -59,7 +59,9 @@ export function optionalDigitalZoom(fields: Record<string, string>): number | nu
 function optionalNumber(fields: Record<string, string>, key: string): number | null {
   const raw = fields[key];
   if (raw === undefined || raw.trim() === "") return null;
-  const n = Number(raw);
+  // ułamek "1/100" (czas naświetlania) też jest liczbą: 0.01
+  const frac = /^\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\s*$/.exec(raw);
+  const n = frac ? Number(frac[1]) / Number(frac[2]) : Number(raw);
   return Number.isFinite(n) ? tidyNumber(n) : null;
 }
 
