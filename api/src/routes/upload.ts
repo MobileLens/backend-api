@@ -76,6 +76,11 @@ async function putFile(
   await storeFile(bucket, objectKey, upload.file.path, visibility);
 }
 
+/** Naruszenie klucza obcego SQLite (np. aparat usunięty między sprawdzeniem a zapisem). */
+function isForeignKeyError(err: unknown): boolean {
+  return (err as { code?: string } | null)?.code === "SQLITE_CONSTRAINT_FOREIGNKEY";
+}
+
 /** Jeśli zapis rekordu się nie uda, nie zostawiamy osieroconego pliku na dysku. */
 async function removeOrphan(url: string) {
   try {
@@ -141,9 +146,16 @@ uploadRouter.post("/photo/upload", requireAuth, photoLimit, async (c) => {
       await db.insert(photo).values(newPhoto);
     } catch (err) {
       await removeOrphan(stored);
+      // aparat (albo cały telefon) usunięty w trakcie wysyłania pliku
+      if (isForeignKeyError(err)) return fail(c, 404, "CAMERA_NOT_FOUND", "Camera not found");
       throw err;
     }
     await ensureVariants(BUCKETS.photos, objectKey, "photo");
+    // usunięcie w trakcie tworzenia miniatur: miniatury powstały już po skasowaniu plików, sprzątamy je
+    if (!(await db.select({ id: photo.id }).from(photo).where(eq(photo.id, newPhoto.id)))[0]) {
+      await removeOrphan(stored);
+      return fail(c, 404, "CAMERA_NOT_FOUND", "Camera not found");
+    }
     return c.json({
       id: newPhoto.id, status: "pending", objectKey,
       thumbUrl: variantUrl(stored, "w480", false),
@@ -251,6 +263,7 @@ uploadRouter.post("/video/upload", requireAuth, videoLimit, async (c) => {
       await db.insert(video).values(newVideo);
     } catch (err) {
       await removeOrphan(stored);
+      if (isForeignKeyError(err)) return fail(c, 404, "CAMERA_NOT_FOUND", "Camera not found");
       throw err;
     }
     return c.json({ id: newVideo.id, status: "pending", objectKey }, 201);
